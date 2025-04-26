@@ -1,16 +1,16 @@
 ## Speed Test Analysis
 
 This repo is organized into the following sections:
-
-1) url_filter.js  --> collects the relevant URLs from raw Netlog data
-2) manual_netlog.js --> filters out the important events for finding throughput and latency for a manually collected test from Ookla only (A separate script is required for a CARROT test)
-3) visualizations/ --> contains the following:
-    - calculate_plot_throughput.py --> main program to run analysis on raw data after it has been filtered from the raw Netlog data
-    - plotting_functions.py --> modularized functions for different variations of graphs
-    - helper_functions.py --> a variety of helper functions used to collect information about filtered data
-    - throughput_calculation_functions.py --> functions used for calculating throughput (a few versions were used for experimentation)
-4) proces_netlog_data.sh --> a bash script to populate a directory the necessary files after raw netlog data is collected
-
+```
+speed-test-analysis/
+├── url_filter.js                              #collects the relevant URLs from raw Netlog data
+├── manual_netlog.js                           #filters out the important events for finding throughput and latency for a manually collected test from Ookla only (A separate script is required for a CARROT test)
+├── proces_netlog_data.sh                      #a bash script to populate a directory the necessary files after raw netlog data is collected
+└── visualizations/
+    ├── calculate_plot_throughput.py           # main program to run analysis on raw data after it has been filtered from the raw Netlog data
+    ├── plotting_functions.py                  # modularized functions for different variations of graphs
+    └──  throughput_calculation_functions.py   #functions used for calculating throughput (a few versions were used for experimentation)
+```
 
 The visualization files can be used for BOTH a Ookla test with manually collected netlog data and a CARROT test.
 To run the visualization script, use the following command from the root of this directory:
