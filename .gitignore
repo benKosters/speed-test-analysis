@@ -1,0 +1,15 @@
+.DS_Store
+.git/
+node_modules/
+visualizations/cached_data/
+visualizations/versions/
+visualizations/socket_level_throughput.py
+
+#these files are not ready yet, but will be added soon
+latency/
+output/
+testing_files/
+
+
+
+**/output/
