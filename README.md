@@ -15,7 +15,7 @@ speed-test-analysis/
 The visualization files can be used for BOTH a Ookla test with manually collected netlog data and a CARROT test.
 To run the visualization script, use the following command from the root of this directory:
 ```
-python3 visualizations/calculate_throughput_with_plot.py path/to/directory/containing/filtered/data --save
+python3 visualizations/calculate_plot_throughput.py path/to/directory/containing/filtered/data --save
 ```
 The "save" flag is optional, and will create a subdirectory called "plot_images/" inside the directory where the filtered data is.
 
