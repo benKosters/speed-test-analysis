@@ -30,12 +30,10 @@ import helper_functions as hf
 import throughput_calculation_functions as tp
 import plotting_functions as plot
 
-
 # Set up argument parsing to allow a base path as input
 parser = argparse.ArgumentParser(description='Process byte time and latency JSON files.')
 parser.add_argument('base_path', type=str, help='Base path to the JSON files')
 parser.add_argument('--save', action='store_true', help='Save plots to plot_images directory')
-
 
 args = parser.parse_args()
 
@@ -150,7 +148,6 @@ test_title = "Spacelink Single Flow, Test 1"
 df_2ms = pd.DataFrame(throughput_results_2ms) # df for throughput
 df_10ms = pd.DataFrame(throughput_results_10ms)
 
-
 # #graphs to be used in final report:
 # #1) plot showing throughput with only the max number of flows
 plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
@@ -164,11 +161,9 @@ plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time
 plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 2ms Interval",scatter= True, save =args.save, base_path = args.base_path)
 # plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_10ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 10ms Interval", scatter = True, save =args.save, base_path = args.base_path)
 
-
 # # 6 and 7) Plot the current position list for each HTTP stream - useful for visualizing that the spikes come from the raw data
 if test_type == "upload":
     current_list = hf.load_json(current_file)
     # Normalize the timestamps in current_position_list (Use this if plotting each individual source's byte counts)
     normalized_current_list = hf.normalize_current_position_list(current_position_list=current_list,begin_time=begin_time)
     plot.plot_rema_per_http_stream(normalized_current_list, save =args.save, base_path = args.base_path)
-

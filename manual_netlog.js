@@ -30,7 +30,7 @@
 const fs = require('fs');
 const { url } = require('inspector');
 const path = require('path');
-const { ConsoleMessage } = require('puppeteer');
+//const { ConsoleMessage } = require('puppeteer');
 
 // Check if a file path was provided
 const checkFilePath = (filePath) => {
@@ -137,6 +137,38 @@ checkFilePath(filePath);
 checkFilePath(urlPath);
 
 
+//extracts important event type IDs from the constants object
+//This function is used to map the event types to their respective IDs.
+//It returns an object with the event type as the key and the event ID as the value.
+
+/**
+ * @param {object} constants - The constants object from the Netlog file.
+ * @returns {object}
+ */
+
+const getEventTypeMapping = (constants) => {
+return {
+        REQUEST_ALIVE: constants.REQUEST_ALIVE,
+        URL_REQUEST_JOB_FILTERED_BYTES_READ: constants.URL_REQUEST_JOB_FILTERED_BYTES_READ,
+        URL_REQUEST_BYTES_READ: constants.URL_REQUEST_BYTES_READ,
+        URL_REQUEST_JOB_BYTES_READ: constants.URL_REQUEST_JOB_BYTES_READ,
+        UPLOAD_DATA_STREAM_READ: constants.UPLOAD_DATA_STREAM_READ,
+        HTTP_TRANSACTION_SEND_REQUEST_HEADERS: constants.HTTP_TRANSACTION_SEND_REQUEST_HEADERS,
+        HTTP_TRANSACTION_RECEIVE_RESPONSE_HEADERS: constants.HTTP_TRANSACTION_RECEIVE_RESPONSE_HEADERS,
+        HTTP_STREAM_REQUEST_BOUND_TO_JOB: constants.HTTP_STREAM_REQUEST_BOUND_TO_JOB,
+        SOCKET_POOL_BOUND_TO_SOCKET: constants.SOCKET_POOL_BOUND_TO_SOCKET,
+        HTTP_TRANSACTION_SEND_REQUEST_HEADERS_SL: constants.HTTP_TRANSACTION_SEND_REQUEST_HEADERS_SL,
+        HTTP_TRANSACTION_RECEIVE_RESPONSE_HEADERS_SL: constants.HTTP_TRANSACTION_RECEIVE_RESPONSE_HEADERS_SL,
+        UPLOAD_DATA_STREAM_READ_SL: constants.UPLOAD_DATA_STREAM_READ_SL,
+        HTTP_STREAM_REQUEST_BOUND_TO_JOB_SL: constants.HTTP_STREAM_REQUEST_BOUND_TO_JOB_SL,
+        SOCKET_POOL_BOUND_TO_SOCKET_SL: constants.SOCKET_POOL_BOUND_TO_SOCKET_SL,   
+    };
+};
+
+// Usage example (after reading and parsing the Netlog file):
+const netlogData = JSON.parse(fs.readFileSync(filePath, { encoding: 'utf-8' }));
+const EVENT_TYPE = getEventTypeMapping(netlogData.constants);
+
 //get the directory that the netlog file is in
 directory = filePath.substring(0, filePath.lastIndexOf('/'));
 
@@ -222,7 +254,7 @@ if (urlTypeAndForm.count === 1) {
                     typeof (eventData.params) === 'object' &&
                     eventData.params.hasOwnProperty('url') &&
                     form.some(url => eventData.params.url.includes(url) &&
-                        eventData.type === 2
+                        eventData.type === EVENT_TYPE.REQUEST_ALIVE
                     )
                 ) {
                     //if the conditions are met, add entire source(src.id, start_time, type), along with the index and the rest of the event data
@@ -250,7 +282,7 @@ if (urlTypeAndForm.count === 1) {
 
                     //if ((eventData.type === 123 || eventData.type === 122) && eventData.hasOwnProperty('params') && (urltype == "download") && eventData.params.hasOwnProperty('byte_count')) {
                     // 123/122 --> 136(both michwave and spacelink)
-                    if ((eventData.type === 136) && eventData.hasOwnProperty('params') && (urltype == "download") && eventData.params.hasOwnProperty('byte_count')) {
+                    if ((eventData.type === EVENT_TYPE. URL_REQUEST_JOB_BYTES_READ) && eventData.hasOwnProperty('params') && (urltype == "download") && eventData.params.hasOwnProperty('byte_count')) {
                         let existingIdIndex = byte_time_list.findIndex(item => item.id === eventData.source.id);
                         if (existingIdIndex === -1) {
                             // If id does not exist, add it to byte_time_list (progress will store an object containing the byte_count and timestamp)
@@ -266,7 +298,7 @@ if (urlTypeAndForm.count === 1) {
                         //check #3b --> upload events
                         //similar to download, but event type is 450(UPLOAD_DATA_STREAM_READ) and the event must have a current_position attribute
                         // 450 --> 509(michwave) --> 514 (spacelink) //also edited to check both urltype 1 and urltype 2
-                    } else if (eventData.type === 514 && eventData.hasOwnProperty('params') && ((urltype == "upload" || urltype2 == "upload") && eventData.params.hasOwnProperty('current_position'))) {
+                    } else if (eventData.type === EVENT_TYPE.UPLOAD_DATA_STREAM_READ_SL && eventData.hasOwnProperty('params') && ((urltype == "upload" || urltype2 == "upload") && eventData.params.hasOwnProperty('current_position'))) {
                         let existingIdIndex = current_position_list.findIndex(item => item.id === eventData.source.id);
                         if (existingIdIndex === -1) {
                             // If id does not exist, add it to current_position_list
@@ -349,7 +381,7 @@ if (urlTypeAndForm.count === 1) {
                     && ((urltype == "load") || (urltype == "unload") || (urltype2 == "load") || (urltype2 == "unload"))
                     && split_loaded_urls.some(url => String(eventData.params.line).includes(url))
                 ) { //176 -> 219(michwave) --> 224(spacelink)
-                    if (eventData.type === 224) {
+                    if (eventData.type === EVENT_TYPE.HTTP_TRANSACTION_SEND_REQUEST_HEADERS_SL) {
                         const id = eventData.source;
                         const existingIdIndex = loaded_latency_results.findIndex(item => item.sourceID === eventData.source.id); //look for the source ID
                         if (existingIdIndex !== -1) {
@@ -364,7 +396,7 @@ if (urlTypeAndForm.count === 1) {
                         }
                     }
                 } //181 -> 224 (michwave) -> 229 (spacelink)
-                if (eventData.type === 229 && loaded_latency_results.some(item => item.sourceID === eventData.source.id)) {
+                if (eventData.type === EVENT_TYPE.HTTP_TRANSACTION_RECEIVE_RESPONSE_HEADERS_SL && loaded_latency_results.some(item => item.sourceID === eventData.source.id)) {
                     const id = eventData.source;
                     const existingIdIndex = loaded_latency_results.findIndex(item => item.sourceID === eventData.source.id);
                     if (existingIdIndex !== -1) {
@@ -449,7 +481,7 @@ const processHttpStreamJobIds = () => {
         //event type HTTP_STREAM_REQUEST_BOUND_TO_JOB  - 173(michwave) --> 174(spacelink)
         events.forEach((eventData, index) => {
             if (
-                eventData.type === 174 &&
+                eventData.type === EVENT_TYPE.HTTP_STREAM_REQUEST_BOUND_TO_JOB_SL &&
                 eventData.params?.source_dependency &&
                 list.includes(eventData.source?.id)
             ) {
@@ -510,7 +542,7 @@ const processSocketIds = () => {
             events.forEach((eventData, index) => {
                 if (eventData.hasOwnProperty('params') &&
                     eventData.params.hasOwnProperty('source_dependency') &&
-                    eventData.type === 114) {
+                    eventData.type === EVENT_TYPE.SOCKET_POOL_BOUND_TO_SOCKET) {
                     const eventIndex = httpstreamList.indexOf(eventData.source.id);
                     if (eventIndex !== -1) {
                         socketIds.push([
@@ -596,6 +628,8 @@ const processByteCounts = () => {
         writeFileSync('socket_byte_time_list.json', JSON.stringify(byte_time_list, null, 2));
     }
 };
+
+
 
 console.log("Testing url types: ", urltype, "and", urltype2);
 processHttpStreamJobIds();
