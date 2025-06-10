@@ -67,6 +67,7 @@ def normalize_test_data(byte_file, current_file, latency_file):
         print("Latency loaded")
         print("Size of latency list:", len(latency_data), "\n")
 
+
         # Create a dictionary to map IDs to the first receive time from the latency file
         #latency_time_map = {entry['sourceID']: int(entry['recv_time'][0]) for entry in latency_data} #old way that is too rigid... would crash if a value does not exist
         latency_time_map = {entry['sourceID']: int(entry['recv_time'][0]) for entry in latency_data

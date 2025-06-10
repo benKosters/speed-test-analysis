@@ -1,4 +1,4 @@
-/**
+/*
  * This script is used to collect the relevant URLs from manually collected Netlog data.
  * Step 1)Extract download, upload, and load URLs from the Netlog file.
  * Step 2) Check to see if download/ or upload/ directories exist in the same directory as the Netlog file.
@@ -86,11 +86,18 @@ try {
             const UPLOAD_PATTERN2 = 'speedtest.spacelink.com.prod.hosts.ooklaserver.net:8080/upload?nocache=';
             const LOAD_PATTERN2 = 'speedtest.spacelink.com.prod.hosts.ooklaserver.net:8080/hello?nocache=';
 
+
+            //Merit patterns:
+            const DOWNLOAD_PATTERN3 = 'speedtest-gdrp.merit.edu.prod.hosts.ooklaserver.net:8080/download?nocache=';
+            const UPLOAD_PATTERN3 = 'speedtest-gdrp.merit.edu.prod.hosts.ooklaserver.net:8080/upload?nocache=';
+            const LOAD_PATTERN3 = 'speedtest-gdrp.merit.edu.prod.hosts.ooklaserver.net:8080/hello?nocache=';
+        
+
             if (eventData.hasOwnProperty('params') &&
                 typeof (eventData.params) === 'object' &&
                 eventData.params.hasOwnProperty('url')) {
                 //check for download URLs
-                if (eventData.params.url.includes(DOWNLOAD_PATTERN2)) {
+                if (eventData.params.url.includes(DOWNLOAD_PATTERN3)) {
                     if (!download_url_list.download.includes(eventData.params.url)) {
                         download_url_list.download.push(eventData.params.url);
                     }
@@ -98,7 +105,7 @@ try {
                 //check for more download URLs
                 if (eventData.params.hasOwnProperty('created') &&
                     eventData.params.hasOwnProperty('key') &&
-                    eventData.params.key.includes(DOWNLOAD_PATTERN2)) {
+                    eventData.params.key.includes(DOWNLOAD_PATTERN3)) {
                     const urlParts = eventData.params.key.split(' ');
                     if (urlParts.length >= 3) {
                         const extractedUrl = urlParts[2];
@@ -108,13 +115,13 @@ try {
                     }
                 }
                 //check for upload URLs
-                if (eventData.params.url.includes(UPLOAD_PATTERN2)) {
+                if (eventData.params.url.includes(UPLOAD_PATTERN3)) {
                     if (!upload_url_list.upload.includes(eventData.params.url)) {
                         upload_url_list.upload.push(eventData.params.url);
                     }
                 }
                 //check for load URLs (add to both lists)
-                if (eventData.params.url.includes(LOAD_PATTERN2)) {
+                if (eventData.params.url.includes(LOAD_PATTERN3)) {
                     if (!download_url_list.load.includes(eventData.params.url)) {
                         download_url_list.load.push(eventData.params.url);
                     }
