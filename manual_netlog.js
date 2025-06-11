@@ -31,43 +31,7 @@ const fs = require('fs');
 const { url } = require('inspector');
 const path = require('path');
 const { ConsoleMessage } = require('puppeteer');
-
-//merit
-const EVENT_TYPES = {
-    REQUEST_ALIVE: 2,
-    URL_REQUEST_JOB_FILTERED_BYTES_READ: 134,
-    URL_REQUEST_JOB_FILTERED_BYTES_READ_MICHWAVE: 136,
-
-    URL_REQUEST_BYTES_READ: 122,
-    URL_REQUEST_JOB_FILTERED_BYTES_READ_NEW: 136,
-
-    UPLOAD_DATA_STREAM_READ: 502,
-    UPLOAD_DATA_STREAM_READ_MICHWAVE: 509,
-    UPLOAD_DATA_STREAM_READ_SPACELINK: 514,
-
-    HTTP_TRANSACTION_READ_RESPONSE_HEADERS: 218,
-    HTTP_TRANSACTION_READ_RESPONSE_HEADERS_MICHWAVE: 224,
-    HTTP_TRANSACTION_READ_RESPONSE_HEADERS_SPACELINK: 229,
-
-    HTTP_TRANSACTION_SEND_REQUEST_HEADERS: 213,
-    HTTP_TRANSACTION_SEND_REQUEST_HEADERS_MICHWAVE: 219,
-    HTTP_TRANSACTION_SEND_REQUEST_HEADERS_SPACELINK: 224,
-
-    HTTP_TRANSACTION_RECEIVE_RESPONSE_HEADERS: 181,
-    HTTP_TRANSACTION_RECEIVE_RESPONSE_HEADERS_MICHWAVE: 224,
-    HTTP_TRANSACTION_RECEIVE_RESPONSE_HEADERS_SPACELINK: 229,
-
-    HTTP_STREAM_REQUEST_BOUND_TO_JOB: 171,
-    HTTP_STREAM_REQUEST_BOUND_TO_JOB_MICHWAVE: 173,
-    HTTP_STREAM_REQUEST_BOUND_TO_JOB_SPACELINK: 174,
-
-    SOCKET_POOL_BOUND_TO_SOCKET: 112,
-    SOCKET_POOL_BOUND_TO_SOCKET_MICHWAVE: 114,
-    SOCKET_POOL_BOUND_TO_SOCKET_SPACELINK: 114,
-
-    DEBUG: 160
-};
-
+let eventTypeNameToId = {};
 
 // Check if a file path was provided
 const checkFilePath = (filePath) => {
@@ -205,6 +169,52 @@ if (urlTypeAndForm.count === 1) {
         const loaded_latency_results = [];//For loaded latency
 
 
+        // Build event type mapping dynamically
+        if (parsedData.constants && parsedData.constants.event_types) {
+            // Rare, but check first
+            Object.entries(parsedData.constants.event_types).forEach(([name, id]) => {
+                eventTypeNameToId[name] = id;
+            });
+        } else if (parsedData.constants && parsedData.constants.logEventTypes) {
+            // Most Chrome NetLogs use this
+            Object.entries(parsedData.constants.logEventTypes).forEach(([name, id]) => {
+            eventTypeNameToId[name] = id;
+        });
+        } else if (parsedData.event_types) {
+            // Some other formats
+            Object.entries(parsedData.event_types).forEach(([name, id]) => {
+                eventTypeNameToId[name] = id;
+            });
+        } else {
+            // As a last resort, try to build mapping from events themselves
+            console.warn("No event type mapping found in NetLog file. Attempting to build mapping from events...");
+            const typeNameToIdTemp = {};
+            if (parsedData.events && Array.isArray(parsedData.events)) {
+                parsedData.events.forEach(event => {
+                    if (typeof event.type === 'number' && typeof event.type_name === 'string') {
+                        typeNameToIdTemp[event.type_name] = event.type;
+                    }
+                });
+            }
+            if (Object.keys(typeNameToIdTemp).length > 0) {
+                eventTypeNameToId = typeNameToIdTemp;
+                console.log("Built eventTypeNameToId from events:", eventTypeNameToId);
+            } /*else {
+                console.warn("Could not build event type mapping from events. Defaulting to hardcoded values.");
+                eventTypeNameToId = {
+                    REQUEST_ALIVE: 2,
+                    URL_REQUEST_JOB_FILTERED_BYTES_READ: 136,
+                    URL_REQUEST_BYTES_READ: 122,
+                    UPLOAD_DATA_STREAM_READ: 514,
+                    HTTP_TRANSACTION_SEND_REQUEST_HEADERS: 224,
+                    HTTP_TRANSACTION_READ_RESPONSE_HEADERS: 229,
+                    HTTP_STREAM_REQUEST_BOUND_TO_JOB: 174,
+                    SOCKET_POOL_BOUND_TO_SOCKET: 114
+                    // Add any others you use in your code
+                };
+            }*/
+        }
+
         // 1) Download URLS
         //only store the relative attributes of the urls, removing the domain - saves the cache, guid, and size attributes
         //we need this to check for the proper HTTP_TRANSACTION_SEND_REQUEST_HEADERS event
@@ -259,7 +269,7 @@ if (urlTypeAndForm.count === 1) {
                     typeof (eventData.params) === 'object' &&
                     eventData.params.hasOwnProperty('url') &&
                     form.some(url => eventData.params.url.includes(url) &&
-                        eventData.type === EVENT_TYPES.URL_REQUEST_JOB_FILTERED_BYTES_READ
+                        eventData.type === eventTypeNameToId['REQUEST_ALIVE']
                     )
                 ) {
                     //if the conditions are met, add entire source(src.id, start_time, type), along with the index and the rest of the event data
@@ -286,8 +296,8 @@ if (urlTypeAndForm.count === 1) {
                     // 4) must have byte_count property
 
                     //if ((eventData.type === 123 || eventData.type === 122) && eventData.hasOwnProperty('params') && (urltype == "download") && eventData.params.hasOwnProperty('byte_count')) {
-                    // 123/122 --> 136(both michwave and spacelink)
-                    if ((eventData.type === EVENT_TYPES.URL_REQUEST_JOB_FILTERED_BYTES_READ) && eventData.hasOwnProperty('params') && (urltype == "download") && eventData.params.hasOwnProperty('byte_count')) {
+                    // 123/122 --> 136(both michwave and spacelink) --> 134 (merit)
+                    if (((eventData.type === eventTypeNameToId['URL_REQUEST_JOB_FILTERED_BYTES_READ']) || (eventData.type === eventTypeNameToId['URL_REQUEST_BYTES_READ'])) && eventData.hasOwnProperty('params') && (urltype == "download") && eventData.params.hasOwnProperty('byte_count')) {
                         let existingIdIndex = byte_time_list.findIndex(item => item.id === eventData.source.id);
                         if (existingIdIndex === -1) {
                             // If id does not exist, add it to byte_time_list (progress will store an object containing the byte_count and timestamp)
@@ -303,7 +313,7 @@ if (urlTypeAndForm.count === 1) {
                         //check #3b --> upload events
                         //similar to download, but event type is 450(UPLOAD_DATA_STREAM_READ) and the event must have a current_position attribute
                         // 450 --> 509(michwave) --> 514 (spacelink) --> 502(merit) //also edited to check both urltype 1 and urltype 2
-                    } else if (eventData.type === EVENT_TYPES.UPLOAD_DATA_STREAM_READ && eventData.hasOwnProperty('params') && ((urltype == "upload" || urltype2 == "upload") && eventData.params.hasOwnProperty('current_position'))) {
+                    } else if (eventData.type === eventTypeNameToId['UPLOAD_DATA_STREAM_READ'] && eventData.hasOwnProperty('params') && ((urltype == "upload" || urltype2 == "upload") && eventData.params.hasOwnProperty('current_position'))) {
                         let existingIdIndex = current_position_list.findIndex(item => item.id === eventData.source.id);
                         if (existingIdIndex === -1) {
                             // If id does not exist, add it to current_position_list
@@ -342,8 +352,8 @@ if (urlTypeAndForm.count === 1) {
                         && ((urltype == "load") || (urltype == "unload") || (urltype2 == "load") || (urltype2 == "unload"))
                         && split_urls.some(url => eventData.params.line.includes(url))
                     ) {
-                        //176 -> 219(michwave) --> 224(spacelink) --> 213 (merit)
-                        if (eventData.type === EVENT_TYPES.HTTP_TRANSACTION_SEND_REQUEST_HEADERS) { //event 219 is for manually collected tests
+                        //176 -> 219(michwave) --> 224(spacelink) --> 213(merit)
+                        if (eventData.type === eventTypeNameToId['HTTP_TRANSACTION_SEND_REQUEST_HEADERS']) { //event 219 is for manually collected tests
                             const id = eventData.source;
                             const existingIdIndex = latency_results.findIndex(item => item.sourceID === eventData.source.id); //look for the source ID
                             if (existingIdIndex !== -1) {
@@ -359,8 +369,8 @@ if (urlTypeAndForm.count === 1) {
                         }
                     }
                     //If the event is http recieve response headers, then add timestamp as "recv_time"
-                    //181 -> 224(michwave) -> 229(spacelink) --> 218(merit)
-                    if (eventData.type === EVENT_TYPES.HTTP_TRANSACTION_READ_RESPONSE_HEADERS && latency_results.some(item => item.sourceID === eventData.source.id)) { //event 224 for manual tests
+                    //181 -> 224(michwave) -> 229(spacelink) --> 218(merit) HTTP_TRANSACTION_READ_RESPONSE_HEADERS
+                    if (eventData.type === eventTypeNameToId['HTTP_TRANSACTION_READ_RESPONSE_HEADERS'] && latency_results.some(item => item.sourceID === eventData.source.id)) { //event 224 for manual tests
                         const existingIdIndex = latency_results.findIndex(item => item.sourceID === eventData.source.id);
                         if (existingIdIndex !== -1) {
                             if (!latency_results[existingIdIndex].recv_time) {
@@ -385,8 +395,8 @@ if (urlTypeAndForm.count === 1) {
                     eventData.params.hasOwnProperty('line')
                     && ((urltype == "load") || (urltype == "unload") || (urltype2 == "load") || (urltype2 == "unload"))
                     && split_loaded_urls.some(url => String(eventData.params.line).includes(url))
-                ) { //176 -> 219(michwave) --> 224(spacelink) --> 231(merit)
-                    if (eventData.type === EVENT_TYPES.HTTP_TRANSACTION_SEND_REQUEST_HEADERS) {
+                ) { //176 -> 219(michwave) --> 224(spacelink) --> 213(merit) HTTP_TRANSACTION_SEND_REQUEST_HEADERS
+                    if (eventData.type === eventTypeNameToId['HTTP_TRANSACTION_SEND_REQUEST_HEADERS']) {
                         const id = eventData.source;
                         const existingIdIndex = loaded_latency_results.findIndex(item => item.sourceID === eventData.source.id); //look for the source ID
                         if (existingIdIndex !== -1) {
@@ -400,8 +410,8 @@ if (urlTypeAndForm.count === 1) {
                             loaded_latency_results.push({ sourceID: eventData.source.id, send_time: [eventData.time] });
                         }
                     }
-                } //181 -> 224 (michwave) -> 229 (spacelink)
-                if (eventData.type === EVENT_TYPES.HTTP_TRANSACTION_READ_RESPONSE_HEADERS && loaded_latency_results.some(item => item.sourceID === eventData.source.id)) {
+                } //181 -> 224 (michwave) -> 229 (spacelink) --> 218 (merit) HTTP_TRANSACTION_READ_RESPONSE_HEADERS
+                if (eventData.type === eventTypeNameToId['HTTP_TRANSACTION_READ_RESPONSE_HEADERS'] && loaded_latency_results.some(item => item.sourceID === eventData.source.id)) {
                     const id = eventData.source;
                     const existingIdIndex = loaded_latency_results.findIndex(item => item.sourceID === eventData.source.id);
                     if (existingIdIndex !== -1) {
@@ -419,6 +429,8 @@ if (urlTypeAndForm.count === 1) {
                 console.error("Error parsing line", index, ":", error);
             }
         });
+
+
 
         // Write byte_time_list (id, type, and progress [{bytecount, timestamp}]
         writeFileSync('byte_time_list.json', JSON.stringify(byte_time_list, null, 2));
@@ -486,7 +498,7 @@ const processHttpStreamJobIds = () => {
         //event type HTTP_STREAM_REQUEST_BOUND_TO_JOB  - 173(michwave) --> 174(spacelink) --> 171(merit)
         events.forEach((eventData, index) => {
             if (
-                eventData.type === EVENT_TYPES.HTTP_STREAM_REQUEST_BOUND_TO_JOB &&
+                eventData.type === eventTypeNameToId['HTTP_STREAM_REQUEST_BOUND_TO_JOB'] &&
                 eventData.params?.source_dependency &&
                 list.includes(eventData.source?.id)
             ) {
@@ -547,7 +559,7 @@ const processSocketIds = () => {
             events.forEach((eventData, index) => {
                 if (eventData.hasOwnProperty('params') &&
                     eventData.params.hasOwnProperty('source_dependency') &&
-                    eventData.type === 114) {
+                    eventData.type === eventTypeNameToId['SOCKET_POOL_BOUND_TO_SOCKET']) {
                     const eventIndex = httpstreamList.indexOf(eventData.source.id);
                     if (eventIndex !== -1) {
                         socketIds.push([
@@ -604,51 +616,33 @@ const processByteCounts = () => {
 
             events.forEach((eventData, index) => {
                 if (eventData.hasOwnProperty('params') &&
-                    eventData.params.hasOwnProperty('byte_count') &&
-                    (
-                    eventData.type === EVENT_TYPES.URL_REQUEST_JOB_FILTERED_BYTES_READ ||
-                    eventData.type === EVENT_TYPES.URL_REQUEST_BYTES_READ ||
-                    eventData.type === EVENT_TYPES.URL_REQUEST_JOB_FILTERED_BYTES_READ_NEW
-                )) {
-                    //debug pring
-                    console.log("Matched event:", eventData.type, eventData.source.id, eventData.params.byte_count);
-                    //const eventIndex = socketID.indexOf(eventData.source.id);
-                     let socketRowIndex = -1;
-                    for (let i = 0; i < urlSourceID.length; i++) {
-                        if (urlSourceID[i] === eventData.source.id || httpID[i] === eventData.source.id) {
-                            socketRowIndex = i;
-                            break;
-                        }
-                    }
-                    if (socketRowIndex !== -1) {
-                        const sid = socketID[socketRowIndex];
+                    eventData.params.hasOwnProperty('byte_count')) {
+                    const eventIndex = socketID.indexOf(eventData.source.id);
+                    if (eventIndex !== -1) {
                         // Add new entry if socket ID not found
-                        if (!byte_time_list.some(item => item.id === sid)) {
+                        if (!byte_time_list.some(item => item.id === socketID[eventIndex])) {
                             byte_time_list.push({
-                                id: sid,
+                                id: socketID[eventIndex],
                                 type: urltype,
                                 progress: []
                             });
                         }
                         // Add progress data
                         byte_time_list.find(item =>
-                            item.id === sid
+                            item.id === socketID[eventIndex]
                         ).progress.push({
                             bytecount: eventData.params.byte_count,
                             time: eventData.time
                         });
                     }
                 }
-                //debug
-                console.log("Processing event", eventData.type, eventData.source.id, "socket match:", eventIndex !== -1);
             });
         }
     } catch (error) {
         console.error("Error:", error);
     } finally {
         // process bytes counts at the socket level
-        //writeFileSync('socket_byte_time_list.json', JSON.stringify(byte_time_list, null, 2));
-        writeFileSync('socketIds.txt', socketIds.map(row => row.join(',')).join('\n'));
+        writeFileSync('socket_byte_time_list.json', JSON.stringify(byte_time_list, null, 2));
     }
 };
 
