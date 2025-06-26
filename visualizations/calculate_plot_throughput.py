@@ -45,6 +45,7 @@ print(f"Current Working Directory: {os.getcwd()}")
 byte_file = os.path.abspath(os.path.join(args.base_path, "byte_time_list.json"))
 current_file = os.path.abspath(os.path.join(args.base_path, "current_position_list.json"))
 latency_file = os.path.abspath(os.path.join(args.base_path, "latency.json"))
+loaded_latency_file = os.path.abspath(os.path.join(args.base_path, "loaded_latency.json"))
 socket_file = os.path.abspath(os.path.join(args.base_path, "socketIds.txt"))
 
 
@@ -55,14 +56,28 @@ print()
 print(f"Byte Time File: {byte_file}")
 print(f"Current Position File: {current_file}")
 print(f"Latency File: {latency_file}")
+print(f"Loaded Latency File: {loaded_latency_file}")
 print()
 # Check and load files
-for file_path in [byte_file, current_file, latency_file]: #add loaded_latency_file if used
+files_to_check = [byte_file, current_file, loaded_latency_file]
+# Only check latency file if it should exist (optional for some test types)
+if os.path.exists(latency_file):
+    files_to_check.append(latency_file)
+
+for file_path in files_to_check:
     print(f"Checking: {file_path}")
     if not os.path.exists(file_path):
         print(f"ERROR: File not found - {file_path}\n")
     else:
         print(f"File exists: {file_path}\n")
+
+# Special handling for optional latency file
+if not os.path.exists(latency_file):
+    print(f"Optional file (unloaded latency): {latency_file}")
+    print("File not found - this is OK if no unload URLs were used in the test\n")
+else:
+    print(f"Optional file (unloaded latency): {latency_file}")
+    print("File exists - unloaded latency data will be included\n")
 print()
 
 
@@ -167,3 +182,79 @@ if test_type == "upload":
     # Normalize the timestamps in current_position_list (Use this if plotting each individual source's byte counts)
     normalized_current_list = hf.normalize_current_position_list(current_position_list=current_list,begin_time=begin_time)
     plot.plot_rema_per_http_stream(normalized_current_list, save =args.save, base_path = args.base_path)
+
+#------------------Step 5: Plotting Latency-------------------------------------------------
+
+# Load and plot latency data - only if files exist
+latency_data_available = os.path.exists(latency_file) or os.path.exists(loaded_latency_file)
+
+if latency_data_available:
+    idle_latencies = []
+    loaded_latencies = []
+    
+    # Load idle latency if available (from latency.json which now contains idle/unload latency)
+    if os.path.exists(latency_file):
+        with open(latency_file, 'r') as f:
+            idle_latency = json.load(f)
+        idle_latencies = tp.extract_latencies(idle_latency)
+        print("Idle Latency Values:", idle_latencies)
+    else:
+        print("No idle latency file found - skipping idle latency plotting")
+    
+    # Load loaded latency if available
+    if os.path.exists(loaded_latency_file):
+        with open(loaded_latency_file, 'r') as f:
+            loaded_latency = json.load(f)
+        loaded_latencies = tp.extract_latencies(loaded_latency)
+        print("Loaded Latency Values:", loaded_latencies)
+    else:
+        print("No loaded latency file found - skipping loaded latency plotting")
+
+    # Plot latencies if we have any data
+    if idle_latencies or loaded_latencies:
+        plt.figure(figsize=(10,5))
+        
+        if idle_latencies:
+            plt.scatter(range(len(idle_latencies)), idle_latencies, label='Idle Latency', alpha=0.7, color='blue')
+        
+        if loaded_latencies:
+            plt.scatter(range(len(loaded_latencies)), loaded_latencies, label='Loaded Latency', alpha=0.7, color='red')
+            
+        plt.xlabel('Stream Index')
+        plt.ylabel('Latency (ms)')
+        plt.title('Idle vs Loaded Latency Comparison')
+        plt.legend()
+        if args.save:
+            plt.savefig(os.path.join(args.base_path, "plot_images", "latency_scatter.png"))
+        plt.show()
+        
+        # Plot histogram
+        plt.figure(figsize=(10,5))
+        if idle_latencies:
+            plt.hist(idle_latencies, bins=20, alpha=0.7, label='Idle Latency', color='blue')
+        if loaded_latencies:
+            plt.hist(loaded_latencies, bins=20, alpha=0.7, label='Loaded Latency', color='red')
+        plt.xlabel('Latency (ms)')
+        plt.ylabel('Frequency')
+        plt.title('Latency Distribution: Idle vs Loaded')
+        plt.legend()
+        if args.save:
+            plt.savefig(os.path.join(args.base_path, "plot_images", "latency_histogram.png"))
+        plt.show()
+        
+        # Calculate and display latency comparison metrics
+        if idle_latencies and loaded_latencies:
+            idle_mean = sum(idle_latencies) / len(idle_latencies)
+            loaded_mean = sum(loaded_latencies) / len(loaded_latencies)
+            latency_increase = loaded_mean - idle_mean
+            latency_increase_percent = (latency_increase / idle_mean) * 100 if idle_mean > 0 else 0
+            
+            print(f"--------- LATENCY ANALYSIS ---------")
+            print(f"Mean Idle Latency: {idle_mean:.2f}ms")
+            print(f"Mean Loaded Latency: {loaded_mean:.2f}ms")
+            print(f"Latency Increase: {latency_increase:.2f}ms ({latency_increase_percent:.1f}%)")
+            
+    else:
+        print("No latency data available for plotting")
+else:
+    print("No latency files found - skipping latency plotting section")
