@@ -95,6 +95,12 @@ the intervals of time that byte counts were being sent over.
 """
 aggregated_time, source_times, begin_time = tp.aggregate_timestamps_and_find_stream_durations(byte_list, socket_file)
 print("Number of aggregated timestamps:", len(aggregated_time))
+old = -1
+
+
+for x in aggregated_time:
+    if x == old:
+        print("Found a duplicate timestamp in aggregated_time:", x)
 hf.analyze_stream_sockets_and_timing(source_times) # print out beginning/end times of sources,
 #if two or more streams use the same socket, find the difference between when one starts and the other ends
 
@@ -176,12 +182,15 @@ plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time
 plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 2ms Interval",scatter= True, save =args.save, base_path = args.base_path)
 # plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_10ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 10ms Interval", scatter = True, save =args.save, base_path = args.base_path)
 
-# # 6 and 7) Plot the current position list for each HTTP stream - useful for visualizing that the spikes come from the raw data
+# # 6 and 7) Plot individual HTTP streams for both upload and download tests
 if test_type == "upload":
     current_list = hf.load_json(current_file)
     # Normalize the timestamps in current_position_list (Use this if plotting each individual source's byte counts)
     normalized_current_list = hf.normalize_current_position_list(current_position_list=current_list,begin_time=begin_time)
-    plot.plot_rema_per_http_stream(normalized_current_list, save =args.save, base_path = args.base_path)
+    plot.plot_rema_per_http_stream(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path)
+elif test_type == "download":
+    # For download tests, use the normalized byte_list directly
+    plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path)
 
 #------------------Step 5: Plotting Latency-------------------------------------------------
 

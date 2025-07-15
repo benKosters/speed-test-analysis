@@ -234,8 +234,27 @@ def calculate_traditional_throughput(aggregated_time, byte_count, num_flows, beg
 
 def calculate_interval_throughput(aggregated_time, byte_count, num_flows, interval_threshold, begin_time):
     """
-    Use a interval threshold to determine the minimum time interval for throughput calculation.
-    If a time interval is less than the threshold, combine it with the next interval so that the time interval is greater than or equal to the threshold.
+    Calculate throughput using interval-based aggregation to avoid burst artifacts.
+
+    This method accumulates bytes and time over intervals until a minimum time threshold
+    is reached, then calculates throughput for the combined interval. This approach
+    eliminates artificial spikes caused by 0ms time intervals where multiple byte
+    transfers occur at the same timestamp.
+
+    The function only calculates throughput when all specified flows are contributing
+    to ensure consistent measurements across the timeline.
+
+    Args:
+        aggregated_time (list): Sorted list of all unique timestamps from all sources
+        byte_count (dict): Dictionary mapping timestamps to tuples of (bytecount, number_of_flows)
+        num_flows (int): Expected number of flows that should be contributing
+        interval_threshold (int): Minimum time interval in milliseconds for throughput calculation
+        begin_time (int): Starting timestamp for normalization to relative time
+
+    Returns:
+        list: List of dictionaries containing throughput measurements, each with:
+            - 'time': Time since begin_time in seconds (float)
+            - 'throughput': Throughput in Mbps (float)
     """
     throughput_results = []
     accumulated_bytes = 0
