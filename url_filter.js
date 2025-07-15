@@ -1,4 +1,4 @@
-/**
+/*
  * This script is used to collect the relevant URLs from manually collected Netlog data.
  * Step 1)Extract download, upload, and load URLs from the Netlog file.
  * Step 2) Check to see if download/ or upload/ directories exist in the same directory as the Netlog file.
@@ -63,18 +63,25 @@ try {
     let download_url_list = {
         "download": [],
         "upload": [],
-        "load": [],
-        "unload": []
+        "load": [],      // Keep for backward compatibility (will be populated with loaded latency)
+        "unload": [],    // Will be populated with idle latency
+        "idle_latency": [], // New: explicitly identify idle latency URLs
+        "loaded_latency": [] // New: explicitly identify loaded latency URLs
     };
 
     let upload_url_list = {
         "download": [],
         "upload": [],
-        "load": [],
-        "unload": []
+        "load": [],      // Keep for backward compatibility (will be populated with loaded latency)
+        "unload": [],    // Will be populated with idle latency
+        "idle_latency": [], // New: explicitly identify idle latency URLs  
+        "loaded_latency": [] // New: explicitly identify loaded latency URLs
     };
 
-    // Process each event
+    // Collect all hello URLs for timing analysis
+    let allHelloUrls = [];
+
+    // Process each event to collect URLs
     events.forEach((eventData, index) => {
         try {
             const DOWNLOAD_PATTERN = 'speed.michwave.com.prod.hosts.ooklaserver.net:8080/download?nocache=';
@@ -86,11 +93,18 @@ try {
             const UPLOAD_PATTERN2 = 'speedtest.spacelink.com.prod.hosts.ooklaserver.net:8080/upload?nocache=';
             const LOAD_PATTERN2 = 'speedtest.spacelink.com.prod.hosts.ooklaserver.net:8080/hello?nocache=';
 
+
+            //Merit patterns:
+            const DOWNLOAD_PATTERN3 = 'speedtest-gdrp.merit.edu.prod.hosts.ooklaserver.net:8080/download?nocache=';
+            const UPLOAD_PATTERN3 = 'speedtest-gdrp.merit.edu.prod.hosts.ooklaserver.net:8080/upload?nocache=';
+            const LOAD_PATTERN3 = 'speedtest-gdrp.merit.edu.prod.hosts.ooklaserver.net:8080/hello?nocache=';
+        
+
             if (eventData.hasOwnProperty('params') &&
                 typeof (eventData.params) === 'object' &&
                 eventData.params.hasOwnProperty('url')) {
                 //check for download URLs
-                if (eventData.params.url.includes(DOWNLOAD_PATTERN2)) {
+                if (eventData.params.url.includes(DOWNLOAD_PATTERN)) {
                     if (!download_url_list.download.includes(eventData.params.url)) {
                         download_url_list.download.push(eventData.params.url);
                     }
@@ -98,7 +112,7 @@ try {
                 //check for more download URLs
                 if (eventData.params.hasOwnProperty('created') &&
                     eventData.params.hasOwnProperty('key') &&
-                    eventData.params.key.includes(DOWNLOAD_PATTERN2)) {
+                    eventData.params.key.includes(DOWNLOAD_PATTERN)) {
                     const urlParts = eventData.params.key.split(' ');
                     if (urlParts.length >= 3) {
                         const extractedUrl = urlParts[2];
@@ -108,18 +122,15 @@ try {
                     }
                 }
                 //check for upload URLs
-                if (eventData.params.url.includes(UPLOAD_PATTERN2)) {
+                if (eventData.params.url.includes(UPLOAD_PATTERN)) {
                     if (!upload_url_list.upload.includes(eventData.params.url)) {
                         upload_url_list.upload.push(eventData.params.url);
                     }
                 }
-                //check for load URLs (add to both lists)
-                if (eventData.params.url.includes(LOAD_PATTERN2)) {
-                    if (!download_url_list.load.includes(eventData.params.url)) {
-                        download_url_list.load.push(eventData.params.url);
-                    }
-                    if (!upload_url_list.load.includes(eventData.params.url)) {
-                        upload_url_list.load.push(eventData.params.url);
+                //check for hello URLs - collect them for timing analysis
+                if (eventData.params.url.includes(LOAD_PATTERN)) {
+                    if (!allHelloUrls.includes(eventData.params.url)) {
+                        allHelloUrls.push(eventData.params.url);
                     }
                 }
             }
@@ -129,6 +140,104 @@ try {
             console.error('Event data:', eventData);
         }
     });
+
+    // Time-based URL separation for hello endpoints
+    function separateHelloUrlsByTiming(netlogData, helloUrls) {
+        const events = netlogData.events;
+        
+        // Find timing boundaries
+        const downloadTimes = [];
+        const helloTimes = [];
+        
+        events.forEach(event => {
+            if (event.params && event.params.url) {
+                if (event.params.url.includes('/download') || event.params.url.includes('/upload')) {
+                    downloadTimes.push(parseInt(event.time));
+                } else if (event.params.url.includes('/hello')) {
+                    helloTimes.push({time: parseInt(event.time), url: event.params.url});
+                }
+            }
+        });
+        
+        if (downloadTimes.length === 0) {
+            // No download/upload, all hello URLs are idle latency
+            return {
+                idleLatencyUrls: helloUrls,
+                loadedLatencyUrls: []
+            };
+        }
+        
+        const firstDownloadTime = Math.min(...downloadTimes);
+        const lastDownloadTime = Math.max(...downloadTimes);
+        
+        console.log(`DEBUG: First download time: ${firstDownloadTime}`);
+        console.log(`DEBUG: Total hello URLs to classify: ${helloUrls.length}`);
+        console.log(`DEBUG: Total hello events found: ${helloTimes.length}`);
+        
+        // Separate hello URLs by timing
+        const idleLatencyUrls = [];
+        const loadedLatencyUrls = [];
+        
+        // Group hello events by URL to find their timing
+        const urlTimings = {};
+        helloTimes.forEach(entry => {
+            if (!urlTimings[entry.url]) {
+                urlTimings[entry.url] = [];
+            }
+            urlTimings[entry.url].push(parseInt(entry.time));
+        });
+        
+        // Classify each hello URL based on its timing
+        helloUrls.forEach(url => {
+            const times = urlTimings[url] || [];
+            if (times.length === 0) {
+                // Fallback: if we can't find timing, assume it's loaded latency
+                loadedLatencyUrls.push(url);
+                return;
+            }
+            
+            const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
+            
+            //console.log(`DEBUG: URL ${url.substring(url.indexOf('nocache=')+8, url.indexOf('nocache=')+20)} - avg time: ${avgTime}, first download: ${firstDownloadTime}, is idle: ${avgTime < firstDownloadTime}`);
+            
+            // If average time is before first download, it's idle latency
+            // If it's during/after downloads, it's loaded latency
+            if (avgTime < firstDownloadTime) {
+                idleLatencyUrls.push(url);
+            } else {
+                loadedLatencyUrls.push(url);
+            }
+        });
+        
+        return {
+            idleLatencyUrls,
+            loadedLatencyUrls
+        };
+    }
+
+    // Now separate hello URLs by timing to distinguish idle vs loaded latency
+    console.log("Separating hello URLs by timing...");
+    console.log("Total hello URLs collected:", allHelloUrls.length);
+    
+    if (allHelloUrls.length > 0) {
+        const separation = separateHelloUrlsByTiming(jsonData, allHelloUrls);
+        
+        // Populate the URL lists with separated data
+        download_url_list.unload = separation.idleLatencyUrls;
+        download_url_list.idle_latency = separation.idleLatencyUrls;
+        download_url_list.load = separation.loadedLatencyUrls;
+        download_url_list.loaded_latency = separation.loadedLatencyUrls;
+        
+        upload_url_list.unload = separation.idleLatencyUrls;
+        upload_url_list.idle_latency = separation.idleLatencyUrls;
+        upload_url_list.load = separation.loadedLatencyUrls;
+        upload_url_list.loaded_latency = separation.loadedLatencyUrls;
+        
+        console.log("Idle latency URLs found:", separation.idleLatencyUrls.length);
+        console.log("Loaded latency URLs found:", separation.loadedLatencyUrls.length);
+    } else {
+        console.log("No hello URLs found for latency measurement");
+    }
 
     // Get the directory of the netlog file
     const netlogDir = path.dirname(filePath);
@@ -152,6 +261,7 @@ try {
     // Print summary of found URLs
     console.log("Number of download URLs found:", download_url_list.download.length);
     console.log("Number of load URLs found:", download_url_list.load.length);
+    console.log("Number of idle latency URLs found:", download_url_list.idle_latency.length);
     console.log("Number of upload URLs found:", upload_url_list.upload.length);
 
     // Exit if both files already exist

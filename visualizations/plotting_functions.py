@@ -583,26 +583,74 @@ def plot_throughput_rema_separated_by_flows(throughput_list_dict, start_time, en
 
 """
 For upload tests only, plots the REMA lines differentiated by each HTTP stream. Used to see spikes in the bytecount for each stream
-#FIXME - get this function to work with download tests too
 #FIXME - inconsistency in passing parameters...
 """
-def plot_rema_per_http_stream(normalized_current_position_list, title = None, log_scale=False, save=False, base_path=None):
+def plot_rema_per_http_stream(data, test_type=None, title=None, log_scale=False, save=False, base_path=None):
+    """
+    Plot REMA lines for each HTTP stream for both upload and download tests.
+    
+    Args:
+        data: For upload tests, this is normalized_current_position_list
+              For download tests, this is byte_list (from normalize_test_data)
+        test_type: "upload" or "download" - if None, will auto-detect
+        title: Custom title for the plot
+        log_scale: Whether to use log scale on y-axis
+        save: Whether to save the plot
+        base_path: Path to save the plot
+    """
     stream_data = {}
 
+    # Auto-detect test type if not provided
+    if test_type is None:
+        # Check if data has 'current_position' field (upload) or 'bytecount' field (download)
+        if data and data[0].get('progress') and data[0]['progress'][0].get('current_position') is not None:
+            test_type = "upload"
+        else:
+            test_type = "download"
+    
+    print(f"Plotting individual HTTP streams for {test_type} test")
+
     # for each stream...
-    for entry in normalized_current_position_list:
+    for entry in data:
         stream_id = entry['id']
         progress = entry['progress']
 
         # Combine bytecounts with the same timestamp
         combined_data = {}
-        for item in progress:
-            timestamp = float(item['time'])
-            bytecount = item.get('bytecount', 0)
-            if timestamp in combined_data:
-                combined_data[timestamp] += bytecount
+        
+        if test_type == "upload":
+            # For upload, check if data is already normalized (has 'bytecount') or raw (has 'current_position')
+            if 'bytecount' in progress[0]:
+                # Data is already normalized from normalize_current_position_list
+                for item in progress:
+                    timestamp = float(item['time'])
+                    bytecount = item.get('bytecount', 0)
+                    if timestamp in combined_data:
+                        combined_data[timestamp] += bytecount
+                    else:
+                        combined_data[timestamp] = bytecount
             else:
-                combined_data[timestamp] = bytecount
+                # Data is raw current_position data, convert to bytecounts
+                prev_position = 0
+                for item in progress:
+                    timestamp = float(item['time'])
+                    current_position = item.get('current_position', 0)
+                    bytecount = current_position - prev_position
+                    prev_position = current_position
+                    
+                    if timestamp in combined_data:
+                        combined_data[timestamp] += bytecount
+                    else:
+                        combined_data[timestamp] = bytecount
+        else:
+            # For download, use existing bytecounts
+            for item in progress:
+                timestamp = float(item['time'])
+                bytecount = item.get('bytecount', 0)
+                if timestamp in combined_data:
+                    combined_data[timestamp] += bytecount
+                else:
+                    combined_data[timestamp] = bytecount
 
         df = pd.DataFrame(list(combined_data.items()), columns=['time', 'bytecount'])
         df.sort_values(by='time', inplace=True)  # Ensure data is sorted by time
@@ -625,7 +673,10 @@ def plot_rema_per_http_stream(normalized_current_position_list, title = None, lo
     # Add labels, title, and legend
     ax.set_xlabel('Time (seconds)')
     ax.set_ylabel('Bytecount (REMA)')
-    #ax.set_title('REMA Lines for Each HTTP Stream ID')
+    if title:
+        ax.set_title(title)
+    else:
+        ax.set_title(f'REMA Lines for Each HTTP Stream ({test_type.title()} Test)')
 
     # Create an interactive legend
     legend = ax.legend(loc='upper right', bbox_to_anchor=(1.15, 1), fontsize='small', title="Sources")
@@ -649,7 +700,6 @@ def plot_rema_per_http_stream(normalized_current_position_list, title = None, lo
 
     plt.tight_layout()
     if save and base_path:
-        filename = "upload_individual_http_streams.png"
-
+        filename = f"{test_type}_individual_http_streams.png"
         save_figure(fig, base_path, filename)
     plt.show()

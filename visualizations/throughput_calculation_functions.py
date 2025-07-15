@@ -62,28 +62,32 @@ def normalize_test_data(byte_file, current_file, latency_file):
             })
     else:  # For download test
         test_type = "download"
-        # Load the latency file
-        latency_data = hf.load_json(latency_file)
-        print("Latency loaded")
-        print("Size of latency list:", len(latency_data), "\n")
+        # Load the latency file only if it exists (unloaded latency is optional)
+        if os.path.exists(latency_file):
+            latency_data = hf.load_json(latency_file)
+            print("Latency loaded")
+            print("Size of latency list:", len(latency_data), "\n")
 
-        # Create a dictionary to map IDs to the first receive time from the latency file
-        #latency_time_map = {entry['sourceID']: int(entry['recv_time'][0]) for entry in latency_data} #old way that is too rigid... would crash if a value does not exist
-        latency_time_map = {entry['sourceID']: int(entry['recv_time'][0]) for entry in latency_data
-                   if 'recv_time' in entry and entry['recv_time']}
-        print("Unique source IDs:", len(latency_time_map))
+            # Create a dictionary to map IDs to the first receive time from the latency file
+            #latency_time_map = {entry['sourceID']: int(entry['recv_time'][0]) for entry in latency_data} #old way that is too rigid... would crash if a value does not exist
+            latency_time_map = {entry['sourceID']: int(entry['recv_time'][0]) for entry in latency_data
+                       if 'recv_time' in entry and entry['recv_time']}
+            print("Unique source IDs:", len(latency_time_map))
 
-        # For every unique source ID, prepend a zero-byte entry with the first receive time
-        for entry in byte_list:
-            id = entry['id']
-            progress = entry['progress']
-            # If the ID exists in the latency map, prepend the 0th time entry
-            if id in latency_time_map:
-                zero_time_entry = {
-                    "bytecount": 0,  # Bytecount at recv_time is 0, because no bytes have been received yet
-                    "time": latency_time_map[id]
-                }
-                progress.insert(0, zero_time_entry)  # Prepend to the progress list
+            # For every unique source ID, prepend a zero-byte entry with the first receive time
+            for entry in byte_list:
+                id = entry['id']
+                progress = entry['progress']
+                # If the ID exists in the latency map, prepend the 0th time entry
+                if id in latency_time_map:
+                    zero_time_entry = {
+                        "bytecount": 0,  # Bytecount at recv_time is 0, because no bytes have been received yet
+                        "time": latency_time_map[id]
+                    }
+                    progress.insert(0, zero_time_entry)  # Prepend to the progress list
+        else:
+            print("No unloaded latency file found - throughput calculation will not include unloaded latency timing")
+            print("Only loaded latency (if available) will be used for plotting")
 
     print("Length of byte_list after normalization:", len(byte_list))
     return byte_list, test_type
@@ -230,8 +234,27 @@ def calculate_traditional_throughput(aggregated_time, byte_count, num_flows, beg
 
 def calculate_interval_throughput(aggregated_time, byte_count, num_flows, interval_threshold, begin_time):
     """
-    Use a interval threshold to determine the minimum time interval for throughput calculation.
-    If a time interval is less than the threshold, combine it with the next interval so that the time interval is greater than or equal to the threshold.
+    Calculate throughput using interval-based aggregation to avoid burst artifacts.
+
+    This method accumulates bytes and time over intervals until a minimum time threshold
+    is reached, then calculates throughput for the combined interval. This approach
+    eliminates artificial spikes caused by 0ms time intervals where multiple byte
+    transfers occur at the same timestamp.
+
+    The function only calculates throughput when all specified flows are contributing
+    to ensure consistent measurements across the timeline.
+
+    Args:
+        aggregated_time (list): Sorted list of all unique timestamps from all sources
+        byte_count (dict): Dictionary mapping timestamps to tuples of (bytecount, number_of_flows)
+        num_flows (int): Expected number of flows that should be contributing
+        interval_threshold (int): Minimum time interval in milliseconds for throughput calculation
+        begin_time (int): Starting timestamp for normalization to relative time
+
+    Returns:
+        list: List of dictionaries containing throughput measurements, each with:
+            - 'time': Time since begin_time in seconds (float)
+            - 'throughput': Throughput in Mbps (float)
     """
     throughput_results = []
     accumulated_bytes = 0
@@ -421,3 +444,34 @@ def sum_bytecounts_and_find_time_proportions(byte_list, aggregated_time):
     proportion_stats["most_common"] = sorted_distribution[:10] if sorted_distribution else []
 
     return byte_count, proportion_stats
+
+def extract_latencies(latency_list):
+    """
+    Extract latency values from latency data structure.
+    
+    Args:
+        latency_list (list): List of latency entries with send_time and recv_time
+        
+    Returns:
+        list: List of latency values in milliseconds
+    """
+    latencies = []
+    for entry in latency_list:
+        # If you have both send_time and recv_time:
+        if 'send_time' in entry and 'recv_time' in entry and entry['recv_time']:
+            if isinstance(entry['send_time'], list) and isinstance(entry['recv_time'], list):
+                # Handle array format
+                if len(entry['send_time']) > 0 and len(entry['recv_time']) > 0:
+                    latency_us = int(entry['recv_time'][0]) - int(entry['send_time'][0])
+                    latencies.append(latency_us / 1000)  # Convert to milliseconds
+            else:
+                # Handle single value format
+                latency_us = entry['recv_time'] - entry['send_time']
+                latencies.append(latency_us / 1000)  # Convert to milliseconds
+        # If you only have recv_time (already normalized):
+        elif 'recv_time' in entry and entry['recv_time']:
+            if isinstance(entry['recv_time'], list):
+                latencies.append(entry['recv_time'][0])
+            else:
+                latencies.append(entry['recv_time'])
+    return latencies
