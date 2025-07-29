@@ -585,7 +585,7 @@ def plot_throughput_rema_separated_by_flows(throughput_list_dict, start_time, en
 For upload tests only, plots the REMA lines differentiated by each HTTP stream. Used to see spikes in the bytecount for each stream
 #FIXME - inconsistency in passing parameters...
 """
-def plot_rema_per_http_stream(data, test_type=None, title=None, log_scale=False, save=False, base_path=None):
+def plot_rema_per_http_stream(data, test_type=None, title=None, log_scale=False, save=False, base_path=None, begin_time=None, source_times=None):
     """
     Plot REMA lines for each HTTP stream for both upload and download tests.
     
@@ -597,6 +597,8 @@ def plot_rema_per_http_stream(data, test_type=None, title=None, log_scale=False,
         log_scale: Whether to use log scale on y-axis
         save: Whether to save the plot
         base_path: Path to save the plot
+        begin_time: Start time in milliseconds for normalizing download data timestamps
+        source_times: Dictionary containing stream timing and socket information for Gantt chart
     """
     stream_data = {}
 
@@ -609,6 +611,15 @@ def plot_rema_per_http_stream(data, test_type=None, title=None, log_scale=False,
             test_type = "download"
     
     print(f"Plotting individual HTTP streams for {test_type} test")
+
+    # For download tests, find begin_time if not provided
+    if test_type == "download" and begin_time is None:
+        all_times = []
+        for entry in data:
+            for item in entry['progress']:
+                all_times.append(int(item['time']))
+        begin_time = min(all_times) if all_times else 0
+        print(f"Auto-detected begin_time for download normalization: {begin_time}")
 
     # for each stream...
     for entry in data:
@@ -643,9 +654,10 @@ def plot_rema_per_http_stream(data, test_type=None, title=None, log_scale=False,
                     else:
                         combined_data[timestamp] = bytecount
         else:
-            # For download, use existing bytecounts
+            # For download, use existing bytecounts and normalize timestamps
             for item in progress:
-                timestamp = float(item['time'])
+                # Normalize timestamp: convert from milliseconds to seconds relative to begin_time
+                timestamp = (int(item['time']) - begin_time) / 1000.0
                 bytecount = item.get('bytecount', 0)
                 if timestamp in combined_data:
                     combined_data[timestamp] += bytecount
@@ -659,27 +671,31 @@ def plot_rema_per_http_stream(data, test_type=None, title=None, log_scale=False,
         # Store the processed DataFrame for the stream ID
         stream_data[stream_id] = df
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    # Create figure with subplots - add Gantt chart if source_times is provided
+    if source_times:
+        fig, (ax1, ax2) = plt.subplots(2, 1, height_ratios=[3, 1], figsize=(12, 10))
+    else:
+        fig, ax1 = plt.subplots(figsize=(12, 8))
 
     # Plot REMA lines for each source ID and store the line objects
     lines = {}
     for stream_id, df in stream_data.items():
-        line, = ax.plot(df['time'], df['rema'], label=f"Source {stream_id}")
+        line, = ax1.plot(df['time'], df['rema'], label=f"Stream {stream_id}")
         lines[stream_id] = line
 
     if log_scale:
-        ax.set_yscale('log') # set to log... this is just for experimenting, it is mostly helpful to NOT have a log scale
+        ax1.set_yscale('log') # set to log... this is just for experimenting, it is mostly helpful to NOT have a log scale
 
     # Add labels, title, and legend
-    ax.set_xlabel('Time (seconds)')
-    ax.set_ylabel('Bytecount (REMA)')
+    ax1.set_xlabel('Time (seconds)')
+    ax1.set_ylabel('Bytecount (REMA)')
     if title:
-        ax.set_title(title)
+        ax1.set_title(title)
     else:
-        ax.set_title(f'REMA Lines for Each HTTP Stream ({test_type.title()} Test)')
+        ax1.set_title(f'REMA Lines for Each HTTP Stream ({test_type.title()} Test)')
 
     # Create an interactive legend
-    legend = ax.legend(loc='upper right', bbox_to_anchor=(1.15, 1), fontsize='small', title="Sources")
+    legend = ax1.legend(loc='upper right', bbox_to_anchor=(1.15, 1), fontsize='small', title="Streams")
     legend_lines = legend.get_lines()
 
     # Add interactivity to the legend -  click on the legend to toggle visibility of the corresponding line
@@ -697,6 +713,59 @@ def plot_rema_per_http_stream(data, test_type=None, title=None, log_scale=False,
 
     for legend_line in legend_lines:
         legend_line.set_picker(True)
+
+    # Add HTTP Stream Gantt Chart if source_times is provided
+    if source_times:
+        # ------------------- HTTP Streams Gantt Chart (Bottom Subplot) -------------------
+        # Create color map for unique socket IDs
+        unique_sockets = set(info['socket'] for info in source_times.values() if info['socket'] is not None)
+        colors = plt.cm.rainbow(np.linspace(0, 1, len(unique_sockets)))
+        socket_colors = dict(zip(unique_sockets, colors))
+
+        # Track which socket IDs we've already added to the legend
+        legend_added = set()
+
+        # Plot flow durations on the Gantt chart
+        y_offset = 0
+        for stream_id, info in source_times.items():
+            start_sec = (info['times'][0] - begin_time) / 1000
+            end_sec = (info['times'][1] - begin_time) / 1000
+
+            # Choose color based on socket ID
+            if info['socket'] is not None:
+                color = socket_colors[info['socket']]
+                label = f'Socket {info["socket"]}'
+
+                # Only add to legend if we haven't seen this socket ID before
+                if info['socket'] not in legend_added:
+                    ax2.hlines(y=y_offset, xmin=start_sec, xmax=end_sec,
+                              color=color, linewidth=2, label=label)
+                    legend_added.add(info['socket'])
+                else:
+                    ax2.hlines(y=y_offset, xmin=start_sec, xmax=end_sec,
+                              color=color, linewidth=2)
+            else:
+                color = 'gray'
+                if 'no_socket' not in legend_added:
+                    ax2.hlines(y=y_offset, xmin=start_sec, xmax=end_sec,
+                              color=color, linewidth=2, label='No Socket')
+                    legend_added.add('no_socket')
+                else:
+                    ax2.hlines(y=y_offset, xmin=start_sec, xmax=end_sec,
+                              color=color, linewidth=2)
+
+            y_offset += 1
+
+        # Add labels, legend, and grid for the Gantt chart
+        ax2.set_xlabel('Time (seconds)')
+        ax2.set_ylabel('HTTP Stream ID')
+        ax2.set_yticks(range(len(source_times)))
+        ax2.set_yticklabels([f'Stream {id}' for id in source_times.keys()], fontsize=8)
+        ax2.grid(True, axis='y', linestyle='--', alpha=0.3)
+        ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+
+        # Align the x-axes of both plots
+        ax1.set_xlim(ax2.get_xlim())
 
     plt.tight_layout()
     if save and base_path:
