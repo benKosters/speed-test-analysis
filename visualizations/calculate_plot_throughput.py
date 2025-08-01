@@ -187,10 +187,14 @@ if test_type == "upload":
     current_list = hf.load_json(current_file)
     # Normalize the timestamps in current_position_list (Use this if plotting each individual source's byte counts)
     normalized_current_list = hf.normalize_current_position_list(current_position_list=current_list,begin_time=begin_time)
-    plot.plot_rema_per_http_stream(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path)
+    plot.plot_rema_per_http_stream(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
+    # Plot aggregated bytecounts for upload
+    plot.plot_aggregated_bytecount(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
 elif test_type == "download":
     # For download tests, use the normalized byte_list directly
-    plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path)
+    plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
+    # Plot aggregated bytecounts for download
+    plot.plot_aggregated_bytecount(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
 
 #------------------Step 5: Plotting Latency-------------------------------------------------
 
