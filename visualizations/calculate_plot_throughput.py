@@ -171,15 +171,15 @@ df_10ms = pd.DataFrame(throughput_results_10ms)
 
 # #graphs to be used in final report:
 # #1) plot showing throughput with only the max number of flows
-plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
+#plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
 #plot.plot_throughput_and_http_streams(df_10ms, title=f"{test_title} 10ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
 
 #2 and 3) plot throughput with all points classified by how many flows are contributing (2ms and 10ms bin sizes)
-plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 2ms Interval",scatter= False, save =args.save, base_path = args.base_path)
+#plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 2ms Interval",scatter= False, save =args.save, base_path = args.base_path)
 # plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_10ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 10ms Interval",save =args.save, base_path = args.base_path)
 
 # # # 4 and 5) plot throughput for all flows, with scatter plot overlay
-plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 2ms Interval",scatter= True, save =args.save, base_path = args.base_path)
+#plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 2ms Interval",scatter= True, save =args.save, base_path = args.base_path)
 # plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_10ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 10ms Interval", scatter = True, save =args.save, base_path = args.base_path)
 
 # # 6 and 7) Plot individual HTTP streams for both upload and download tests
@@ -192,9 +192,11 @@ if test_type == "upload":
     plot.plot_aggregated_bytecount(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
 elif test_type == "download":
     # For download tests, use the normalized byte_list directly
-    plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
+    #plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
     # Plot aggregated bytecounts for download
-    plot.plot_aggregated_bytecount(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
+    #plot.plot_aggregated_bytecount(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
+    plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
+
 
 #------------------Step 5: Plotting Latency-------------------------------------------------
 
@@ -204,7 +206,7 @@ latency_data_available = os.path.exists(latency_file) or os.path.exists(loaded_l
 if latency_data_available:
     idle_latencies = []
     loaded_latencies = []
-    
+
     # Load idle latency if available (from latency.json which now contains idle/unload latency)
     if os.path.exists(latency_file):
         with open(latency_file, 'r') as f:
@@ -213,7 +215,7 @@ if latency_data_available:
         print("Idle Latency Values:", idle_latencies)
     else:
         print("No idle latency file found - skipping idle latency plotting")
-    
+
     # Load loaded latency if available
     if os.path.exists(loaded_latency_file):
         with open(loaded_latency_file, 'r') as f:
@@ -226,13 +228,13 @@ if latency_data_available:
     # Plot latencies if we have any data
     if idle_latencies or loaded_latencies:
         plt.figure(figsize=(10,5))
-        
+
         if idle_latencies:
             plt.scatter(range(len(idle_latencies)), idle_latencies, label='Idle Latency', alpha=0.7, color='blue')
-        
+
         if loaded_latencies:
             plt.scatter(range(len(loaded_latencies)), loaded_latencies, label='Loaded Latency', alpha=0.7, color='red')
-            
+
         plt.xlabel('Stream Index')
         plt.ylabel('Latency (ms)')
         plt.title('Idle vs Loaded Latency Comparison')
@@ -240,7 +242,7 @@ if latency_data_available:
         if args.save:
             plt.savefig(os.path.join(args.base_path, "plot_images", "latency_scatter.png"))
         plt.show()
-        
+
         # Plot histogram
         plt.figure(figsize=(10,5))
         if idle_latencies:
@@ -254,19 +256,19 @@ if latency_data_available:
         if args.save:
             plt.savefig(os.path.join(args.base_path, "plot_images", "latency_histogram.png"))
         plt.show()
-        
+
         # Calculate and display latency comparison metrics
         if idle_latencies and loaded_latencies:
             idle_mean = sum(idle_latencies) / len(idle_latencies)
             loaded_mean = sum(loaded_latencies) / len(loaded_latencies)
             latency_increase = loaded_mean - idle_mean
             latency_increase_percent = (latency_increase / idle_mean) * 100 if idle_mean > 0 else 0
-            
+
             print(f"--------- LATENCY ANALYSIS ---------")
             print(f"Mean Idle Latency: {idle_mean:.2f}ms")
             print(f"Mean Loaded Latency: {loaded_mean:.2f}ms")
             print(f"Latency Increase: {latency_increase:.2f}ms ({latency_increase_percent:.1f}%)")
-            
+
     else:
         print("No latency data available for plotting")
 else:
