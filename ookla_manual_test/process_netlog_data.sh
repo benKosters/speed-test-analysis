@@ -26,7 +26,9 @@ NETLOG_DIR=$(dirname "$NETLOG_FILE")
 
 #------------------------------ Step 1: Run url_filter.js to extract URLs-----------------------
 echo -e "\n=========Step 1: Extracting URLs with url_filter.js..."
-node /home/benk/cs390/analysis_manual/url_filter.js "$NETLOG_FILE"
+#node /home/benk/cs390/speed-test-analysis/ookla_manual_test/url_filter.js "$NETLOG_FILE"
+node ./url_filter.js "$NETLOG_FILE"
+
 if [ $? -ne 0 ]; then
     echo "Error: url_filter.js failed."
     exit 1
@@ -45,7 +47,8 @@ UPLOAD_URLS_FILE="$UPLOAD_DIR/upload_urls.json"
 if [ -d "$DOWNLOAD_DIR" ] && [ -f "$DOWNLOAD_URLS_FILE" ]; then
     echo -e "\n==========Step 2: Processing download data with manual_netlog.js..."
     echo "Using URLs file: $DOWNLOAD_URLS_FILE"
-    node /home/benk/cs390/analysis_manual/manual_netlog.js "$NETLOG_FILE" "$DOWNLOAD_URLS_FILE"
+    #node /home/benk/cs390/speed-test-analysis/ookla_manual_test/manual_netlog.js "$NETLOG_FILE" "$DOWNLOAD_URLS_FILE"
+    node ./manual_netlog.js "$NETLOG_FILE" "$DOWNLOAD_URLS_FILE"
     if [ $? -ne 0 ]; then
         echo "Warning: manual_netlog.js failed for download data."
     else
@@ -59,7 +62,8 @@ fi
 if [ -d "$UPLOAD_DIR" ] && [ -f "$UPLOAD_URLS_FILE" ]; then
     echo -e "\n==========Step 3: Processing upload data with manual_netlog.js..."
     echo "Using URLs file: $UPLOAD_URLS_FILE"
-    node /home/benk/cs390/analysis_manual/manual_netlog.js "$NETLOG_FILE" "$UPLOAD_URLS_FILE"
+    #node /home/benk/cs390/speed-test-analysis/ookla_manual_test/manual_netlog.js "$NETLOG_FILE" "$UPLOAD_URLS_FILE"
+    node ./manual_netlog.js "$NETLOG_FILE" "$UPLOAD_URLS_FILE"
     if [ $? -ne 0 ]; then
         echo "Warning: manual_netlog.js failed for upload data."
     else
@@ -80,11 +84,13 @@ if [ -d "$DOWNLOAD_DIR" ] && [ -f "$DOWNLOAD_DIR/byte_time_list.json" ]; then
 
     if [ -f "$LATENCY_FILE" ] && [ ! -f "$NORMALIZED_LATENCY_FILE" ]; then
         echo "Normalizing latency data for download..."
-        python3 /home/benk/cs390/analysis_manual/latency/normalize_latency.py "$LATENCY_FILE"
+        #python3 /home/benk/cs390/analysis_manual/latency/normalize_latency.py "$LATENCY_FILE"
+        python3 ../latency/normalize_latency.py "$LATENCY_FILE"
     fi
 
     # Run the throughput calculation and plotting script
-    python3 /home/benk/cs390/analysis_manual/visualizations/calculate_plot_throughput.py "$DOWNLOAD_DIR" --save
+    #python3 /home/benk/cs390/speed-test-analysis/visualizations/calculate_plot_throughput.py "$DOWNLOAD_DIR" --save
+    python3 ../visualizations/calculate_plot_throughput.py "$DOWNLOAD_DIR" --save
     if [ $? -ne 0 ]; then
         echo "Warning: Throughput calculation/plotting failed for download data."
     else
@@ -104,11 +110,14 @@ if [ -d "$UPLOAD_DIR" ] && [ -f "$UPLOAD_DIR/current_position_list.json" ]; then
 
     if [ -f "$LATENCY_FILE" ] && [ ! -f "$NORMALIZED_LATENCY_FILE" ]; then
         echo "Normalizing latency data for upload..."
-        python3 /home/benk/cs390/analysis_manual/latency/normalize_latency.py "$LATENCY_FILE"
+        #python3 /home/benk/cs390/analysis_manual/latency/normalize_latency.py "$LATENCY_FILE"
+        python3 ../latency/normalize_latency.py "$LATENCY_FILE"
     fi
 
     # Run the throughput calculation and plotting script
-    python3 /home/benk/cs390/analysis_manual/visualizations/calculate_plot_throughput.py "$UPLOAD_DIR" --save
+    #python3 /home/benk/cs390/speed-test-analysis/visualizations/calculate_plot_throughput.py "$UPLOAD_DIR" --save
+    python3 ../visualizations/calculate_plot_throughput.py "$UPLOAD_DIR" --save
+
     if [ $? -ne 0 ]; then
         echo "Warning: Throughput calculation/plotting failed for upload data."
     else
