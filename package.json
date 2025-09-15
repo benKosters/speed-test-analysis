@@ -1,5 +1,11 @@
 {
+  "name": "speed-test-analysis",
+  "version": "1.0.0",
+  "description": "Directory that holds programs to generate, process, clean, and visualize speed test data at the HTTP level and TCP level.",
+  "author": "Ben Kosters",
+  "license": "ISC",
   "dependencies": {
-    "puppeteer": "^24.10.0"
+    "commander": "^14.0.1",
+    "puppeteer": "^24.21.0"
   }
 }

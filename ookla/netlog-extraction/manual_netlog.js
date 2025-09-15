@@ -30,8 +30,7 @@ const fs = require('fs');
 const { url } = require('inspector');
 const path = require('path');
 const { ConsoleMessage } = require('puppeteer');
-
-const map_event_name_to_id = {}; //maps Netlog event names to a number (their IDs) - these IDs depend on the test
+const map_event_name_to_id = {}; //maps Netlog event names to a number (their IDs) - these IDs change for each test, but the names remain the same
 
 
 // Check if a file path was provided
@@ -84,11 +83,7 @@ const deleteFile = (fileName) => {
 
 //Function that returns the url's type and form
 const getUrlTypeAndForm = (urlJSON) => {
-    //print lines for testing purposes...
-    //console.log("URL JSON: ", urlJSON);
-    //console.log("urlJSON.download.length: ", urlJSON.download.length);
     let urltype = "", urltype2 = "", form = [], form2 = [];
-
     // Check for latency URLs - prioritize idle_latency over older unload field
     if (urlJSON.idle_latency && urlJSON.idle_latency.length > 0) {
         urltype2 = "unload";  // Keep internal naming as "unload" for consistency
@@ -209,7 +204,7 @@ if (urlTypeAndForm.count === 1) {
                 console.log("Built map_event_name_to_id from events:", map_event_name_to_id);
             }
         }
-        //end of FIXME section
+        //end of FIXME section for Joshua's code
 
         // 1) Download/Upload URLS (for throughput calculation)
         //only store the relative attributes of the urls, removing the domain - saves the cache, guid, and size attributes
