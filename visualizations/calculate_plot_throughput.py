@@ -2,7 +2,7 @@
 To run this program: python3 calculate_plot_throughput.py <path/to/directory/of/test/> --save
 (save is an optional parameter to save the plots to a directory called plot_images, which will populate in the directory of the test specified)
 
-For a CARROT test, this should look like: python3 calculate_plot_throughput.py ../tests/test_1_ookla_upload_multi_5_30000000/ --save
+For a RABBITS test, this should look like: python3 calculate_plot_throughput.py ../tests/test_1_ookla_upload_multi_5_30000000/ --save
 
 
 Steps of the program:
@@ -46,7 +46,7 @@ byte_file = os.path.abspath(os.path.join(args.base_path, "byte_time_list.json"))
 current_file = os.path.abspath(os.path.join(args.base_path, "current_position_list.json"))
 latency_file = os.path.abspath(os.path.join(args.base_path, "latency.json"))
 loaded_latency_file = os.path.abspath(os.path.join(args.base_path, "loaded_latency.json"))
-socket_file = os.path.abspath(os.path.join(args.base_path, "socketIds.txt"))
+socket_file = os.path.abspath(os.path.join(args.base_path, "socketIds.json"))
 
 
 # for testing... these timestamps are normalized to align with the timestamps in the byte_time_list.json(or current_position_list.json)
