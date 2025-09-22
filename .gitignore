@@ -3,11 +3,10 @@
 node_modules/
 
 
-visualizations/cached_data/
-visualizations/multi-test-analysis/
-visualizations/plot_http_stream_transfer_rates.py
-visualizations/versions/
-visualizations/socket_level_throughput.py
+data-analysis/multi-test-analysis/
+data-analysis/plot_http_stream_transfer_rates.py
+data-analysis/versions/
+data-analysis/socket_level_throughput.py
 
 #these files are not ready yet, but will be added soon
 latency/
