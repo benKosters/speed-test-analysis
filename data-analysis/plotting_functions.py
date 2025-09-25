@@ -160,7 +160,7 @@ def plot_throughput_and_http_streams(df, title=None, source_times=None, begin_ti
         ax1.set_ylabel('Throughput (in Mbps)')
 
         ax1.legend()
-        ax1.set_ylim(20, 250) #set y-axis for consistency
+        ax1.set_ylim(0, 1000) #set y-axis for consistency
 
         # Create color map for unique socket IDs
         unique_sockets = set(info['socket'] for info in source_times.values() if info['socket'] is not None)

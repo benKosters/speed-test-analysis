@@ -15,5 +15,10 @@ testing_files/
 
 rabbits_analysis/output/
 
+# Ignore all contents of the ookla-test-results directory
+ookla/test-execution/ookla-test-results/*
+
+# Keep the ookla-test-results directory itself
+!ookla/test-execution/ookla-test-results/.gitkeep
 
 **/output/

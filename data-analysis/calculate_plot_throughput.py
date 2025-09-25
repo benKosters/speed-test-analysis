@@ -113,9 +113,6 @@ If the timestamp of the bytecount is equal to the start of the interval, set it 
 If the timestamp of the bytecount is equal to the end of the interval, set it as the end time.
 
 If there are multiple byte counts added to a particular timestamp, then there are multiple flows producing data.
-
-Since calculating byte_count is not efficent, "cache" the results to a file for future reference.
-"Caching" can be done for other lists as well (like throughput_results)
 """
 # Check if the byte_count data exists in the directory
 byte_count_file = os.path.abspath(os.path.join(args.base_path, "byte_count.json"))
@@ -123,24 +120,26 @@ byte_count_file = os.path.abspath(os.path.join(args.base_path, "byte_count.json"
 # If the file exists, load it; otherwise, calculate and save it
 if os.path.exists(byte_count_file):
     print(f"Loading byte_count data: {byte_count_file}")
-    with open(byte_count_file, 'r') as f:
-        byte_count = json.load(f)
+    # Load the byte_count data and convert string keys back to integers
+    byte_count_raw = hf.load_json(byte_count_file)
+    # Convert the dictionary keys from strings back to integers
+    byte_count = {int(timestamp): value for timestamp, value in byte_count_raw.items()}
+    print(f"Converted {len(byte_count)} timestamp keys from strings to integers")
 else:
-    print(f"Saving byte_count data: {byte_count_file}")
+    print(f"Calculating and saving byte_count data: {byte_count_file}")
     byte_count = tp.sum_bytecounts_for_timestamps(byte_list, aggregated_time)
     # Save the calculated byte_count for future use
     with open(byte_count_file, 'w') as f:
         json.dump(byte_count, f)
 
 
-
-
 # ----------------------------------Step 4: Throughput Calculation---------------------------------------------
 throughput_results = []
 num_flows = max(byte_count[timestamp][1] for timestamp in byte_count) #find the max number of flows - there should never be MORE than the defined number of flows contributing to a bytecount
-
+print("max number of flows:", num_flows)
 # For a full slate of tests for presenting the final product, calculate throughput for 2 and 10 second intervals with max flow ONLY
 throughput_results_2ms = tp.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 2, begin_time)
+
 throughput_results_10ms = tp.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 10, begin_time)
 
 #throughput grouped by number of flows contributing - used to show there is still a throughput even though not all flows are contributing
@@ -188,18 +187,20 @@ plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval"
 
 # # 6 and 7) Plot individual HTTP streams for both upload and download tests
 if test_type == "upload":
-    current_list = hf.load_json(current_file)
-    # Normalize the timestamps in current_position_list (Use this if plotting each individual source's byte counts)
-    normalized_current_list = hf.normalize_current_position_list(current_position_list=current_list,begin_time=begin_time)
-    plot.plot_rema_per_http_stream(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
-    # Plot aggregated bytecounts for upload
-    plot.plot_aggregated_bytecount(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
+    plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
+    # current_list = hf.load_json(current_file)
+    # # Normalize the timestamps in current_position_list (Use this if plotting each individual source's byte counts)
+    # normalized_current_list = hf.normalize_current_position_list(current_position_list=current_list,begin_time=begin_time)
+    # plot.plot_rema_per_http_stream(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
+    # # Plot aggregated bytecounts for upload
+    # plot.plot_aggregated_bytecount(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
 elif test_type == "download":
+    pass
     # For download tests, use the normalized byte_list directly
     #plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
     # Plot aggregated bytecounts for download
     #plot.plot_aggregated_bytecount(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
-    plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
+    #plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
 
 
 #------------------Step 5: Plotting Latency-------------------------------------------------

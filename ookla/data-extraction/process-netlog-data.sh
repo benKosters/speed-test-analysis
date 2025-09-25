@@ -2,31 +2,50 @@
 
 # An automated script to generate the necessary files from raw Netlog data
 
-# process_netlog.sh - Run url_filter.js and manual_netlog.js in succession
-# Usage: ./process_netlog.sh <path/to/netlog/file>
+# process_netlog_data.sh - Process netlog data for both download and upload tests
+# Usage: ./process_netlog_data.sh <test_output_directory>
 
-# Check if a netlog file was provided
+# Check if a directory was provided
 if [ $# -lt 1 ]; then
-    echo "Error: Please provide the path to a netlog file."
-    echo "Usage: $0 <path/to/netlog/file>"
+    echo "Error: Please provide the path to the test output directory."
+    echo "Usage: $0 <test_output_directory>"
     exit 1
 fi
 
-# Store the netlog file path
-NETLOG_FILE="$1"
+# Store the test directory path
+TEST_DIR="$1"
+
+# Check if the test directory exists
+if [ ! -d "$TEST_DIR" ]; then
+    echo "Error: The directory '$TEST_DIR' does not exist."
+    exit 1
+fi
+
+# Look for the netlog file in the test directory
+NETLOG_FILE="$TEST_DIR/netlog.json"
 
 # Check if the netlog file exists
 if [ ! -f "$NETLOG_FILE" ]; then
-    echo "Error: The file '$NETLOG_FILE' does not exist."
+    echo "Error: Netlog file not found at '$NETLOG_FILE'."
     exit 1
 fi
 
-# Get directory of the netlog file
-NETLOG_DIR=$(dirname "$NETLOG_FILE")
+# Set the netlog directory
+NETLOG_DIR="$TEST_DIR"
 
 #------------------------------ Step 1: Run url_filter.js to extract URLs-----------------------
 echo -e "\n=========Step 1: Extracting URLs with url_filter.js..."
-node ./url_filter.js "$NETLOG_FILE"
+
+# Get the directory of this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+URL_FILTER_SCRIPT="${SCRIPT_DIR}/url_filter.js"
+
+if [ ! -f "$URL_FILTER_SCRIPT" ]; then
+    echo "Error: url_filter.js not found at $URL_FILTER_SCRIPT"
+    exit 1
+fi
+
+node "$URL_FILTER_SCRIPT" "$NETLOG_FILE"
 
 if [ $? -ne 0 ]; then
     echo "Error: url_filter.js failed."
@@ -41,12 +60,20 @@ UPLOAD_DIR="$NETLOG_DIR/upload"
 DOWNLOAD_URLS_FILE="$DOWNLOAD_DIR/download_urls.json"
 UPLOAD_URLS_FILE="$UPLOAD_DIR/upload_urls.json"
 
-# -----------------Step 2: Run manual_netlog.js for download data -------------------------------
+# -----------------Step 2: Run filter-netlog-data.js for download data -------------------------------
+# Define filter script path
+FILTER_SCRIPT="${SCRIPT_DIR}/filter-netlog-data.js"
+
+if [ ! -f "$FILTER_SCRIPT" ]; then
+    echo "Error: filter-netlog-data.js not found at $FILTER_SCRIPT"
+    exit 1
+fi
+
 # Double check to make sure the download directory exists - the script should exit if there was an error previously
 if [ -d "$DOWNLOAD_DIR" ] && [ -f "$DOWNLOAD_URLS_FILE" ]; then
     echo -e "\n==========Step 2: Processing download data with filter-netlog-data.js..."
     echo "Using URLs file: $DOWNLOAD_URLS_FILE"
-    node ./filter-netlog-data.js "$NETLOG_FILE" "$DOWNLOAD_URLS_FILE"
+    node "$FILTER_SCRIPT" "$NETLOG_FILE" "$DOWNLOAD_URLS_FILE"
     if [ $? -ne 0 ]; then
         echo "Warning: filter-netlog-data.js failed for download data."
     else
@@ -60,7 +87,7 @@ fi
 if [ -d "$UPLOAD_DIR" ] && [ -f "$UPLOAD_URLS_FILE" ]; then
     echo -e "\n==========Step 3: Processing upload data with filter-netlog-data.js..."
     echo "Using URLs file: $UPLOAD_URLS_FILE"
-    node ./filter-netlog-data.js "$NETLOG_FILE" "$UPLOAD_URLS_FILE"
+    node "$FILTER_SCRIPT" "$NETLOG_FILE" "$UPLOAD_URLS_FILE"
     if [ $? -ne 0 ]; then
         echo "Warning: filter-netlog-data.js failed for upload data."
     else
@@ -81,11 +108,13 @@ if [ -d "$DOWNLOAD_DIR" ] && [ -f "$DOWNLOAD_DIR/byte_time_list.json" ]; then
 
     if [ -f "$LATENCY_FILE" ] && [ ! -f "$NORMALIZED_LATENCY_FILE" ]; then
         echo "Normalizing latency data for download..."
-        python3 ../latency/normalize_latency.py "$LATENCY_FILE"
+        LATENCY_SCRIPT="$(cd "$SCRIPT_DIR/../.." && pwd)/latency/normalize_latency.py"
+        python3 "$LATENCY_SCRIPT" "$LATENCY_FILE"
     fi
 
     # Run the throughput calculation and plotting script
-    python3 ../../data-analysis/calculate_plot_throughput.py "$DOWNLOAD_DIR" --save
+    THROUGHPUT_SCRIPT="$(cd "$SCRIPT_DIR/../.." && pwd)/data-analysis/calculate_plot_throughput.py"
+    python3 "$THROUGHPUT_SCRIPT" "$DOWNLOAD_DIR" --save
     if [ $? -ne 0 ]; then
         echo "Warning: Throughput calculation/plotting failed for download data."
     else
@@ -105,11 +134,13 @@ if [ -d "$UPLOAD_DIR" ] && [ -f "$UPLOAD_DIR/current_position_list.json" ]; then
 
     if [ -f "$LATENCY_FILE" ] && [ ! -f "$NORMALIZED_LATENCY_FILE" ]; then
         echo "Normalizing latency data for upload..."
-        python3 ../latency/normalize_latency.py "$LATENCY_FILE"
+        LATENCY_SCRIPT="$(cd "$SCRIPT_DIR/../.." && pwd)/latency/normalize_latency.py"
+        python3 "$LATENCY_SCRIPT" "$LATENCY_FILE"
     fi
 
     # Run the throughput calculation and plotting script
-    python3 ../../data-analysis/calculate_plot_throughput.py "$UPLOAD_DIR" --save
+    THROUGHPUT_SCRIPT="$(cd "$SCRIPT_DIR/../.." && pwd)/data-analysis/calculate_plot_throughput.py"
+    python3 "$THROUGHPUT_SCRIPT" "$UPLOAD_DIR" --save
 
     if [ $? -ne 0 ]; then
         echo "Warning: Throughput calculation/plotting failed for upload data."

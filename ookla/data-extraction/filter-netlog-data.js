@@ -414,7 +414,7 @@ const processHttpStreamJobIds = () => {
         console.log("The ids of the http streams are: ", list);
         events.forEach((eventData, index) => {
             if (
-                eventData.type === logEvent_ids['HTTP_STREAM_JOB_CONTROLLER_BOUND'] &&
+                eventData.type === logEvent_ids['HTTP_STREAM_REQUEST_BOUND_TO_JOB'] &&
                 eventData.params?.source_dependency &&
                 list.includes(eventData.source?.id)
             ) {
@@ -459,7 +459,7 @@ const processSocketIds = () => {
         const events = parsedData.events;
 
         // Read http stream job IDs
-        const httpstreamJobs = readFileSync(httpStreamIdsPath);
+        const httpstreamJobs = JSON.parse(readFileSync(httpStreamIdsPath));
 
         if (httpstreamJobs.length !== 0) {
             // Parse the HTTP stream jobs
