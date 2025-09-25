@@ -31,7 +31,7 @@ function validate_output_directory(outputOption) {
     if (outputOption) {
         output_dir = outputOption;
     } else {
-        const defaultDir = "netlog_output";
+        const defaultDir = "./netlog_output";
         if (!fs.existsSync(defaultDir)) {
             fs.mkdirSync(defaultDir, { recursive: true });
         }
@@ -48,7 +48,7 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
     //const browser = await puppeteer.launch({ headless: false }); // Set to true to run headless
     //const keyarg = "--ssl-key-log-file=./sslkeylog.log"; //Save SSL keys to decrypt HTTP traffic
     const netlogarg = "--log-net-log=" + output_dir + "/netlog.json";
-    const browser = await puppeteer.launch({ headless: true, args: [netlogarg, '--no-sandbox'] }) //#FIXME add keyarg later to save SSL keys
+    const browser = await puppeteer.launch({ headless: "new", args: [netlogarg, '--no-sandbox'] }) //#FIXME add keyarg later to save SSL keys
     const page = await browser.newPage();
 
     await page.setViewport({ width: 1280, height: 800 });
