@@ -132,9 +132,10 @@ try {
     // Process each event to collect URLs
     events.forEach((eventData, index) => {
         try {
-            const DOWNLOAD_PATTERN = 'ooklaserver.net:8080/download?nocache=';
-            const UPLOAD_PATTERN = 'ooklaserver.net:8080/upload?nocache=';
-            const LOAD_PATTERN = 'ooklaserver.net:8080/hello?nocache=';
+            const DOWNLOAD_PATTERN = '8080/download?nocache=';
+            const UPLOAD_PATTERN = '8080/upload?nocache=';
+            const LOAD_PATTERN = '8080/hello?nocache=';
+
 
 
             if (eventData.hasOwnProperty('params') &&
