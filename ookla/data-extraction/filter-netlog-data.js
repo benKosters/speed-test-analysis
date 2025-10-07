@@ -19,8 +19,6 @@
  *      4) socket_byte_time_list.json
  *      5) socketIds.txt
  *
- * These output files are written to the output directory, for ease of access. They are also
- * written to the same directory as where the URLs came from in order to save the results.
  */
 
 //Import the filesystem and path modules

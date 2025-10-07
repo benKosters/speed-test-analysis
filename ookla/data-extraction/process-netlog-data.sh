@@ -113,7 +113,7 @@ if [ -d "$DOWNLOAD_DIR" ] && [ -f "$DOWNLOAD_DIR/byte_time_list.json" ]; then
     fi
 
     # Run the throughput calculation and plotting script
-    THROUGHPUT_SCRIPT="$(cd "$SCRIPT_DIR/../.." && pwd)/data-analysis/calculate_plot_throughput.py"
+    THROUGHPUT_SCRIPT="$(cd "$SCRIPT_DIR/../.." && pwd)/data-analysis/exploratory-data-analysis/eda_driver.py"
     python3 "$THROUGHPUT_SCRIPT" "$DOWNLOAD_DIR" --save
     if [ $? -ne 0 ]; then
         echo "Warning: Throughput calculation/plotting failed for download data."
@@ -139,7 +139,7 @@ if [ -d "$UPLOAD_DIR" ] && [ -f "$UPLOAD_DIR/current_position_list.json" ]; then
     fi
 
     # Run the throughput calculation and plotting script
-    THROUGHPUT_SCRIPT="$(cd "$SCRIPT_DIR/../.." && pwd)/data-analysis/calculate_plot_throughput.py"
+    THROUGHPUT_SCRIPT="$(cd "$SCRIPT_DIR/../.." && pwd)/data-analysis/exploratory-data-analysis/eda_driver.py"
     python3 "$THROUGHPUT_SCRIPT" "$UPLOAD_DIR" --save
 
     if [ $? -ne 0 ]; then

@@ -1,8 +1,9 @@
 """
-To run this program: python3 calculate_plot_throughput.py <path/to/directory/of/test/> --save
-(save is an optional parameter to save the plots to a directory called plot_images, which will populate in the directory of the test specified)
+This is the main driver for exploratory data analysis (just learning about one single test)
 
-For a RABBITS test, this should look like: python3 calculate_plot_throughput.py ../tests/test_1_ookla_upload_multi_5_30000000/ --save
+For a Conventional Ookla test, the command is: python3 eda_driver.py ../../ookla/test-execution/ookla-test-results/michwave-multi-2025-10-02_1945 --save
+
+For a RABBITS test, this should look like: python3 eda_driver.py ../tests/test_1_ookla_upload_multi_5_30000000/ --save
 
 
 Steps of the program:
@@ -18,17 +19,20 @@ Steps of the program:
 """
 import json
 import argparse
-import os
 import sys
+import os
 import pandas as pd
-from collections import defaultdict
-from matplotlib import pyplot as plt
-import numpy as np
 
-#importing functions from other files to keep this file (somewhat) clean
-import helper_functions as hf
-import throughput_calculation_functions as tp
-import plotting_functions as plot
+#Custom function imports to keep the driver clean:
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import throughput_data_processing as tp_proc
+import throughput_plots as tp_plot
+import data_processing_validation as validate
+import throughput_calculation as tp_calc
+import summary_statistics as ss
+import utilities
+
 
 # Set up argument parsing to allow a base path as input
 parser = argparse.ArgumentParser(description='Process byte time and latency JSON files.')
@@ -42,8 +46,6 @@ print(f"Provided Base Path: {args.base_path}")
 print(f"Current Working Directory: {os.getcwd()}")
 
 # Construct the full file paths by appending the specific filenames
-
-
 byte_file = os.path.abspath(os.path.join(args.base_path, "byte_time_list.json"))
 current_file = os.path.abspath(os.path.join(args.base_path, "current_position_list.json"))
 latency_file = os.path.abspath(os.path.join(args.base_path, "latency.json"))
@@ -86,14 +88,14 @@ print()
  Normalize the test data based on the test type (upload or download) - This function is defined in throughput_calculation_functions.py
  #FIXME: test_type might not be needed.
 """
-byte_list, test_type = tp.normalize_test_data(byte_file, current_file, latency_file)
+byte_list, test_type = tp_proc.normalize_test_data(byte_file, current_file, latency_file)
 
 #----------------------Step 2: Aggregating timestamps----------------------------------------------
 """
 In order to calculate throughput, (especially for multiple flows) we need to aggregate the timestamps to find
 the intervals of time that byte counts were being sent over.
 """
-aggregated_time, source_times, begin_time = tp.aggregate_timestamps_and_find_stream_durations(byte_list, socket_file)
+aggregated_time, source_times, begin_time = tp_proc.aggregate_timestamps_and_find_stream_durations(byte_list, socket_file)
 print("Number of aggregated timestamps:", len(aggregated_time))
 old = -1
 
@@ -101,7 +103,8 @@ old = -1
 for x in aggregated_time:
     if x == old:
         print("Found a duplicate timestamp in aggregated_time:", x)
-hf.analyze_stream_sockets_and_timing(source_times) # print out beginning/end times of sources,
+
+ss.save_socket_stream_data(byte_list, source_times, args.base_path, print_output=True)
 #if two or more streams use the same socket, find the difference between when one starts and the other ends
 
 #--------------------------------Step 3: Summing bytecounts for timestamps------------------------
@@ -121,13 +124,13 @@ byte_count_file = os.path.abspath(os.path.join(args.base_path, "byte_count.json"
 if os.path.exists(byte_count_file):
     print(f"Loading byte_count data: {byte_count_file}")
     # Load the byte_count data and convert string keys back to integers
-    byte_count_raw = hf.load_json(byte_count_file)
+    byte_count_raw = utilities.load_json(byte_count_file)
     # Convert the dictionary keys from strings back to integers
     byte_count = {int(timestamp): value for timestamp, value in byte_count_raw.items()}
     print(f"Converted {len(byte_count)} timestamp keys from strings to integers")
 else:
     print(f"Calculating and saving byte_count data: {byte_count_file}")
-    byte_count = tp.sum_bytecounts_for_timestamps(byte_list, aggregated_time)
+    byte_count = tp_calc.sum_bytecounts_for_timestamps(byte_list, aggregated_time)
     # Save the calculated byte_count for future use
     with open(byte_count_file, 'w') as f:
         json.dump(byte_count, f)
@@ -138,35 +141,33 @@ throughput_results = []
 num_flows = max(byte_count[timestamp][1] for timestamp in byte_count) #find the max number of flows - there should never be MORE than the defined number of flows contributing to a bytecount
 print("max number of flows:", num_flows)
 # For a full slate of tests for presenting the final product, calculate throughput for 2 and 10 second intervals with max flow ONLY
-throughput_results_2ms = tp.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 2, begin_time)
+throughput_results_2ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 2, begin_time)
 
-throughput_results_10ms = tp.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 10, begin_time)
+throughput_results_10ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 10, begin_time)
 
 #throughput grouped by number of flows contributing - used to show there is still a throughput even though not all flows are contributing
 throughput_by_flows_2ms = {}
 for flow_count in range(1, num_flows + 1):
-    throughput_by_flows_2ms[flow_count] = tp.calculate_interval_throughput(aggregated_time, byte_count, flow_count, 2, begin_time)
+    throughput_by_flows_2ms[flow_count] = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, flow_count, 2, begin_time)
 
 throughput_by_flows_10ms = {}
 for flow_count in range(1, num_flows + 1):
-    throughput_by_flows_10ms[flow_count] = tp.calculate_interval_throughput(aggregated_time, byte_count, flow_count, 10, begin_time)
-
+    throughput_by_flows_10ms[flow_count] = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, flow_count, 10, begin_time)
 
 print("Number of througput points for 2ms:", len(throughput_results_2ms))
-hf.analyze_throughput_intervals(throughput_results_2ms)
+validate.analyze_throughput_intervals(throughput_results_2ms)
 
 print("Number of througput points for 10ms:", len(throughput_results_10ms))
-hf.analyze_throughput_intervals(throughput_results_10ms)
+validate.analyze_throughput_intervals(throughput_results_10ms)
 
 print("stats for 2ms interval")
-hf.throughput_mean_median_range(throughput_results_2ms)
+validate.throughput_mean_median_range(throughput_results_2ms)
 print("stats for 10ms interval")
-hf.throughput_mean_median_range(throughput_results_10ms)
+validate.throughput_mean_median_range(throughput_results_10ms)
 
 
 #print out the number of flows contributing to a byte count, and the frequency that they occur.
-hf.calculate_occurrence_sums(byte_count)
-
+ss.calculate_occurrence_sums(byte_count)
 #---------------------------------------------Plotting-------------------------------------------------
 test_title = "Spacelink Single Flow, Test 1"
 df_2ms = pd.DataFrame(throughput_results_2ms) # df for throughput
@@ -174,7 +175,7 @@ df_10ms = pd.DataFrame(throughput_results_10ms)
 
 # #graphs to be used in final report:
 # #1) plot showing throughput with only the max number of flows
-plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
+tp_plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
 #plot.plot_throughput_and_http_streams(df_10ms, title=f"{test_title} 10ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
 
 #2 and 3) plot throughput with all points classified by how many flows are contributing (2ms and 10ms bin sizes)
@@ -187,11 +188,11 @@ plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval"
 
 # # 6 and 7) Plot individual HTTP streams for both upload and download tests
 if test_type == "upload":
-    plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
+    tp_plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
     # current_list = hf.load_json(current_file)
     # # Normalize the timestamps in current_position_list (Use this if plotting each individual source's byte counts)
     # normalized_current_list = hf.normalize_current_position_list(current_position_list=current_list,begin_time=begin_time)
-    # plot.plot_rema_per_http_stream(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
+    # tp_plot.plot_rema_per_http_stream(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
     # # Plot aggregated bytecounts for upload
     # plot.plot_aggregated_bytecount(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
 elif test_type == "download":
