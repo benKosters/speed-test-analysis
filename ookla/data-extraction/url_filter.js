@@ -28,7 +28,7 @@ checkFilePath(filePath);
 function fixAndParseJSON(jsonString, originalFilePath) {
     // Handles two cases for Puppeteer-collected netlog.json:
     // 1. Missing closing `]}` at the end
-    // 2. Has trailing comma and missing closing `]}`
+    // 2. Has trailing comma, and is missing closing `]}`
 
     jsonString = jsonString.trim();
 
@@ -101,7 +101,6 @@ function fixAndParseJSON(jsonString, originalFilePath) {
 try {
     const data = readFileSync(filePath);
     const result = fixAndParseJSON(data, filePath);
-
     console.log("JSON parsed successfully.");
 
     // Extract only the events array

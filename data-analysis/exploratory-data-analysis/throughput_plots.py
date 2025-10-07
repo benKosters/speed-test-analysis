@@ -1,146 +1,22 @@
+
 """
-The functions defined in this file are ucan be called to plot various graphs to vizualize important data collected from Netlog data (mostly throughput).
+1) plot_throughput_and_http_streams: Plots the throughput data with HTTP streams in a Gantt chart on a plot beneath it
 
-The following functions are defined:
-1) ensure_plot_dir: Ensures that the plot directory exists - used when we need to save the plots to their corresponding tests
-2) save_figure: Saves the figure to the plot_images directory if it doesn't already exist
+2) plot_throughput_scatter_max_flows_only: Plots the throughput data with a scatter plot overlay, but only for points where num_flows are contributing to the bytecount
+3) plot_throughput_scatter_max_and_one_fewer_flows: Plots the throughput data with a scatter plot overlay, but only for points where num_flows and num_flows - 1 are contributing to the bytecount
+4) plot_throughput_rema_separated_by_flows: Plots the throughput data with a scatter plot overlay, classified by the number of flows contributing(ALL flows represented)
 
-3) traditional_rema_throughput_plot: Legacy method of plotting throughput used by A and A -- this is not anymore, but kept just in case
-4) plot_subsection_of_throughput: Plots a subsection of the throughput data for a specific time interval
-5) plot_throughput_and_http_streams: Plots the throughput data with HTTP streams in a Gantt chart on a plot beneath it
+5) plot_rema_per_http_stream: Plots the REMA lines for each HTTP stream, useful for visualizing spikes in the bytecount
+6) plot_aggregated_bytecount: Plots only the aggregated bytecounts across all HTTP streams for a clean view of total system throughput
 
-6) plot_throughput_scatter_max_flows_only: Plots the throughput data with a scatter plot overlay, but only for points where num_flows are contributing to the bytecount
-7) plot_throughput_scatter_max_and_one_fewer_flows: Plots the throughput data with a scatter plot overlay, but only for points where num_flows and num_flows - 1 are contributing to the bytecount
-8) plot_throughput_rema_separated_by_flows: Plots the throughput data with a scatter plot overlay, classified by the number of flows contributing(ALL flows represented)
-
-9) plot_rema_per_http_stream: Plots the REMA lines for each HTTP stream, useful for visualizing spikes in the bytecount
-10) plot_aggregated_bytecount: Plots only the aggregated bytecounts across all HTTP streams for a clean view of total system throughput
 """
-
 
 import matplotlib.pyplot as plt
-import pandas as pd
 import numpy as np
-import argparse
-import os
-import json
-import sys
-import argparse
+import pandas as pd
 
-"""
-Helper functions for saving these plots...
-#FIXME - move these to helper_functions.py?
-"""
-def ensure_plot_dir(base_path):
-    #If the plot_images directory does not exist in the directory that the test resides in, create it
-    plot_dir = os.path.join(base_path, "plot_images")
-    if not os.path.exists(plot_dir):
-        os.makedirs(plot_dir)
-        print(f"Created directory: {plot_dir}")
-    return plot_dir
+import plotting_utilities
 
-def save_figure(fig, base_path, filename):
-    #Save a figure to the plot_images directory if it doesn't already exist.
-    plot_dir = ensure_plot_dir(base_path)
-    filepath = os.path.join(plot_dir, filename)
-
-    # If the file already exists, don't overwrite it - just keep the current one
-    if os.path.exists(filepath):
-        print(f"File already exists, not saving: {filepath}")
-        return False
-
-    # Otherwise, save the plot
-    fig.savefig(filepath, dpi=300, bbox_inches='tight')
-    print(f"Saved plot to: {filepath}")
-    return True
-
-"""
-Old REMA plot used by A and A. -- not used anymore
-"""
-def traditional_rema_throughput_plot(df, title = None, save = False, base_path = None):
-    if 'throughput' in df.columns:
-        df['throughput_ema'] = df['throughput'].ewm(alpha=0.1, adjust=False).mean()
-        # Plot throughput over time
-        plt.figure()
-        plt.plot(df['time'], df['throughput_ema'], color='red', linestyle='--')
-        plt.xlabel('Time (in seconds)')
-        plt.ylabel('Throughput (in Mbps)')
-        #plt.title(f"{args.base_path.split('/')[-1]}")
-        plt.legend()
-        #plt.ylim(20, 250)  # Set consistent y-axis range
-        plt.ylim(50, 200)  # for testing...
-
-        # plt.savefig(f"plots/{args.base_path.split('/')[-1]}.jpg")
-        # print(f"{args.base_path.split('/')[-1]}.jpg")
-        if save and base_path:
-            if title:
-                filename = f"{title.replace(' ', '_').replace(',', '')}.png"
-            else:
-                filename = "old_throughput_plot.png"
-
-            save_figure(fig, base_path, filename)
-        plt.show()
-    else:
-        print("No throughput data available for plotting.")
-
-"""
-This plotting function is used to visualize the throughput data for a specific time interval within the test.
-This way we can zoom in on a specific time interval of interest so that we can see specific points in more detail.
-At this point in time, this graph will not be used in a final analysis.
-"""
-def plot_subsection_of_throughput(df, start_time, end_time, save = False, base_path = None):
-    # Filter the DataFrame to include only rows within the specified timeframe
-    filtered_df = df[(df['time'] >= start_time) & (df['time'] <= end_time)].copy()
-    print(f"Filtered DataFrame length: {len(filtered_df)}")
-
-    if 'throughput' in filtered_df.columns:
-        filtered_df['throughput_ema'] = filtered_df['throughput'].ewm(alpha=0.1, adjust=False).mean()
-        plt.figure()
-
-        #---------finding the largest time difference between points---------
-        #FIXME - turn this portion into a separate function
-        if len(filtered_df) > 1:  # Ensure there are at least two points to calculate differences
-            time_differences = filtered_df['time'].diff().dropna()  # Calculate differences and drop NaN
-            max_time_diff = time_differences.max()  # Find the maximum difference
-            print(f"\nLargest time difference between points: {max_time_diff:.3f} seconds")
-        else:
-            print("\nNot enough data points to calculate time differences.")
-
-
-        # Build a scatter plot to show the individual throughput data points
-        plt.scatter(
-            filtered_df['time'],
-            filtered_df['throughput'],
-            color='blue',
-            s=10,  # Point size
-            alpha=0.7,     # Transparency
-            label='Throughput Points'
-        )
-
-        # Overlay of the REMA throughput
-        plt.plot(
-            filtered_df['time'],
-            filtered_df['throughput_ema'],
-            color='red',
-            linestyle='--',
-            linewidth=1.5,
-            label='REMA Smoothed'
-        )
-
-        plt.xlabel('Time (in seconds)')
-        plt.ylabel('Throughput (in Mbps)')
-        plt.title(f"Filtered Throughput (Timeframe: {start_time}s to {end_time}s)")
-        plt.legend()
-        #plt.ylim(50, 250)  # Same ylim as traditional_rema_throughput_plot -- don't set interval since some throughput values are very high
-
-        plt.tight_layout()
-        if save and base_path:
-            filename = "throughput_over_small_interval.png"
-
-            save_figure(fig, base_path, filename)
-        plt.show()
-    else:
-        print("No throughput data available for plotting.")
 
 
 """
@@ -219,7 +95,7 @@ def plot_throughput_and_http_streams(df, title=None, source_times=None, begin_ti
         plt.tight_layout()
         if save and base_path:
             filename = "throughput_and_sockets.png"
-            save_figure(fig, base_path, filename)
+            plotting_utilities.save_figure(fig, base_path, filename)
 
         plt.show()
     else:
@@ -322,7 +198,7 @@ def plot_throughput_scatter_max_flows_only(df, start_time, end_time, source_time
     if save and base_path:
         filename = "throughput_rema_and_scatter_max_flows_only.png"
 
-        save_figure(fig, base_path, filename)
+        plotting_utilities.save_figure(fig, base_path, filename)
     plt.show()
 
 """
@@ -438,7 +314,7 @@ def plot_throughput_scatter_max_and_one_fewer_flows(df, less_flows_df, start_tim
     plt.tight_layout()
     if save and base_path:
         filename = "scatterplot_with_two_flow_groups.png"
-        save_figure(fig, base_path, filename)
+        plotting_utilities.save_figure(fig, base_path, filename)
     plt.show()
 
 
@@ -579,7 +455,7 @@ def plot_throughput_rema_separated_by_flows(throughput_list_dict, start_time, en
     plt.tight_layout()
     if save and base_path:
         filename = "throughput_rema_separated_by_flows.png"
-        save_figure(fig, base_path, filename)
+        plotting_utilities.save_figure(fig, base_path, filename)
     plt.show()
 
 """
@@ -772,7 +648,7 @@ def plot_aggregated_bytecount(data, test_type=None, title=None, log_scale=False,
     plt.tight_layout()
     if save and base_path:
         filename = f"{test_type}_aggregated_bytecounts.png"
-        save_figure(fig, base_path, filename)
+        plotting_utilities.save_figure(fig, base_path, filename)
     plt.show()
 
 """
@@ -964,7 +840,7 @@ def plot_rema_per_http_stream(data, test_type=None, title=None, log_scale=False,
     plt.tight_layout()
     if save and base_path:
         filename = f"{test_type}_individual_http_streams.png"
-        save_figure(fig, base_path, filename)
+        plotting_utilities.save_figure(fig, base_path, filename)
     plt.show()
 
     # Ensure the plot window is centered on the screen

@@ -1,0 +1,221 @@
+"""
+The functions for preparing the data are:
+1) normalize_test_data: Normalize either byte_time_list.json or current_position_list.json, depending on the test
+
+2) aggregate_timestamps_and_find_stream_durations: aggregates the timestamps from all sources and finds the start and end times for each HTTP stream. It also finds the socket that each stream uses if socket_file is available.
+
+3) sum_bytecounts_for_timestamps: Finds the proportion of byte counts for each interval, and how many flows are contributing at each byte count
+"""
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import utilities
+
+#------------------------------------Data Normalization------------------------------------------------
+def normalize_test_data(byte_file, current_file, latency_file):
+    # Load byte list first to determine test type
+    byte_list = utilities.load_json(byte_file)
+    print("The length of byte_list is:", len(byte_list))  # Verify byte_list is loaded correctly
+
+    test_type = None
+
+    if byte_list == []:  # For upload test
+        test_type = "upload"
+        current_list = utilities.load_json(current_file)
+        print("Length of current position list:", len(current_list))
+
+        # Transform cumulative data into incremental byte data
+        byte_list = []
+        for item in current_list:
+            new_progress = []
+            prev_position = 0  # Initialize the previous position
+
+            for progress in item["progress"]:
+                current_position = progress["current_position"]
+                time = progress["time"]
+
+                # Difference between positions is the number of bytes transferred
+                bytes_transferred = current_position - prev_position
+                prev_position = current_position  # Update previous position
+
+                # Add the incremental data to the new progress list
+                new_progress.append({"bytecount": bytes_transferred, "time": time})
+
+            # Append the transformed item to the uncumulated list
+            byte_list.append({
+                "id": item["id"],
+                "type": item["type"],
+                "progress": new_progress
+            })
+    else:  # For download test
+        test_type = "download"
+        # Load the latency file only if it exists (unloaded latency is optional)
+        if os.path.exists(latency_file):
+            latency_data = utilities.load_json(latency_file)
+            print("Latency loaded")
+            print("Size of latency list:", len(latency_data), "\n")
+
+            # Create a dictionary to map IDs to the first receive time from the latency file
+            #latency_time_map = {entry['sourceID']: int(entry['recv_time'][0]) for entry in latency_data} #old way that is too rigid... would crash if a value does not exist
+            latency_time_map = {entry['sourceID']: int(entry['recv_time'][0]) for entry in latency_data
+                       if 'recv_time' in entry and entry['recv_time']}
+            print("Unique source IDs:", len(latency_time_map))
+
+            # For every unique source ID, prepend a zero-byte entry with the first receive time
+            for entry in byte_list:
+                id = entry['id']
+                progress = entry['progress']
+                # If the ID exists in the latency map, prepend the 0th time entry
+                if id in latency_time_map:
+                    zero_time_entry = {
+                        "bytecount": 0,  # Bytecount at recv_time is 0, because no bytes have been received yet
+                        "time": latency_time_map[id]
+                    }
+                    progress.insert(0, zero_time_entry)  # Prepend to the progress list
+        else:
+            print("No unloaded latency file found - throughput calculation will not include unloaded latency timing")
+            print("Only loaded latency (if available) will be used for plotting")
+
+    print("Length of byte_list after normalization:", len(byte_list))
+    return byte_list, test_type
+#-----------------------------------Timestamp Aggregation---------------------------------------------
+def aggregate_timestamps_and_find_stream_durations(byte_list, socket_file):
+    """
+    The aggregated_time_list contains all the unique timestamps from all sources in the test.
+    If there are multiple tests, these timestamps should overlap.
+
+    This function:
+    1. Extracts unique timestamps from all sources
+    2. Records the start and end times for each source
+    3. Finds the socket each source uses if socket_file is available
+
+    Args:
+        byte_list (list): List of byte transfer entries with progress data
+        socket_file (str): Path to socketIds.txt file
+
+    Returns:
+        tuple: (aggregated_time, source_times, test_type, begin_time)
+            - aggregated_time: List of all unique timestamps from all sources
+            - source_times: Dictionary mapping source IDs to timing and socket info
+            - begin_time: The earliest timestamp in the aggregated data
+    """
+    aggregated_time = []
+    source_times = {}
+
+    # Step 1: Extract timestamps and source timing information
+    for entry in byte_list:  # For every source ID...
+        progress = entry['progress']
+        source_id = entry['id']
+
+        # Find the "begin" and "end" time for each source (first and last timestamps that have a bytecount)
+        if progress:
+            source_times[source_id] = {
+                'times': [int(progress[0]['time']), int(progress[-1]['time'])],
+                'socket': None  # Will be populated later
+            }
+
+            # Add  unique timestamps to aggregated_time
+            for item in progress:
+                timestamp = int(item['time'])
+                if timestamp not in aggregated_time:
+                    aggregated_time.append(timestamp)
+
+    #Find the socket that each source uses
+    if os.path.exists(socket_file):
+        try:
+            # First try to load as JSON
+            socket_data = utilities.load_json(socket_file)
+            if isinstance(socket_data, list) and len(socket_data) > 0 and isinstance(socket_data[0], list):
+                # Process JSON list format
+                for entry in socket_data:
+                    if len(entry) >= 3:
+                        source_id = entry[0]  # First element is source_id
+                        socket_id = entry[2]  # Third element is socket_id
+                        if source_id in source_times:
+                            source_times[source_id]['socket'] = socket_id
+            else:
+                # For backward capability where socketIds.txt is still used, parse as text file
+                with open(socket_file, 'r') as f:
+                    for line in f:
+                        try:
+                            source_id, _, socket_id = map(int, line.strip().split(','))
+                            if source_id in source_times:
+                                source_times[source_id]['socket'] = socket_id
+                        except (ValueError, IndexError):
+                            print(f"Warning: Invalid line in socket file: {line.strip()}")
+        except Exception as e:
+            print(f"Error processing socket file: {e}")
+            # Fallback to text file parsing
+            with open(socket_file, 'r') as f:
+                for line in f:
+                    try:
+                        source_id, _, socket_id = map(int, line.strip().split(','))
+                        if source_id in source_times:
+                            source_times[source_id]['socket'] = socket_id
+                    except (ValueError, IndexError):
+                        print(f"Warning: Invalid line in socket file: {line.strip()}")
+
+    # Step 3: Sort timestamps and find the beginning time
+    aggregated_time.sort()
+    begin_time = aggregated_time[0]
+
+    print("Number of aggregated timestamps:", len(aggregated_time))
+
+    return aggregated_time, source_times, begin_time
+#-----------------------------------Bytecount Summation---------------------------------------------
+def sum_bytecounts_for_timestamps(byte_list, aggregated_time):
+    """
+    Sum byte counts for timestamps over intervals.
+
+    For every source ID, loop through the entire aggregated time list.
+    For every interval of time, loop through every element in that ID's progress list.
+    Find the start and end times for each interval, then calculate the proportion of bytes
+    to add to each timestamp.
+
+    If there are multiple byte counts added to a particular timestamp, then there are multiple
+    flows producing data.
+
+    Args:
+        byte_list (list): List of byte transfer entries with progress data
+        aggregated_time (list): Sorted list of all unique timestamps
+
+    Returns:
+        dict: Dictionary mapping timestamps to tuples of (bytecount, number_of_flows)
+    """
+    byte_count = {}
+    for entry in byte_list: #for each source ID
+        end_time = -1
+        start_time = -1
+        for i in range(len(aggregated_time[1:])): #loop through entire aggregated_time list, setting the window size to be between each event
+            current_list_time = aggregated_time[i]
+            prev_list_time = aggregated_time[i-1]
+
+            progress = entry['progress']
+            for item in progress:
+                if (end_time != -1 and start_time!= -1):
+                    break
+
+                if ((int(item['time']) > prev_list_time) and start_time==-1):
+                    break
+
+                if (int(item['time']) <= prev_list_time):
+                    start_time = int(item['time'])
+
+                elif (int(item['time']) >= current_list_time):
+                    end_time = int(item['time'])
+                if (end_time != -1):
+                    proportion = (current_list_time - prev_list_time) / (end_time - start_time)
+                    bytes_to_add = int(item['bytecount']) * proportion
+                    if current_list_time in byte_count:
+                        byte_count[current_list_time][0] += bytes_to_add
+                        byte_count[current_list_time][1] += 1
+
+                    else:
+                        byte_count[current_list_time] = [bytes_to_add,1]
+
+            start_time = -1
+            end_time = -1 #reset start and end time for each event
+
+
+    return byte_count
