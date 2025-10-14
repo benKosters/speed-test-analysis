@@ -8,13 +8,55 @@ sum_bytecounts_and_find_time_proportions: Used for finding the frequencies that 
 import numpy as np
 import json
 
-#1. Validation for byte_count
-def print_byte_count_entries(byte_count, num_entries):
-    """
-    Print the first num_entries from byte_count --> used for testing purposes
-    """
-    for i, (timestamp, [bytes_count, flows]) in enumerate(list(byte_count.items())[:num_entries]):
-        print(f"Timestamp: {timestamp}, Bytes: {bytes_count}, Flows: {flows}")
+def byte_count_validation(byte_list, byte_count):
+    #1: calculate the raw bytes collected from the test, as well as the duration of the test
+    total_raw_bytes = 0
+    first_timestamp = float('inf')
+    last_timestamp = -1
+    for entry in byte_list:
+        for progress in entry['progress']:
+            total_raw_bytes += int(progress['bytecount'])
+            first_timestamp = min([int(progress['time']), first_timestamp])
+            last_timestamp = max([int(progress['time']), last_timestamp])
+
+
+    duration_ms = last_timestamp - first_timestamp
+    list_duration_sec = duration_ms / 1000
+    #---------------------------collection of bytes/duraction from byte_count--------------------------
+    #Next, calculate the total bytes in byte_count - these bytes have been processed according to A and A's method
+    total_processed_bytes = 0
+    for timestamp, (bytes_count, flows) in byte_count.items():
+        total_processed_bytes += bytes_count
+
+    # Convert keys to integers (in case they're strings)
+    timestamps = [int(ts) for ts in byte_count.keys()]
+    first_timestamp = min(timestamps)
+    last_timestamp = max(timestamps)
+    duration_ms = last_timestamp - first_timestamp
+    count_duration_sec = duration_ms / 1000
+
+    #using the byte_list, loop through the each entry. For each entry, only add the bytecounts if the previous timestamp was different than the last one
+    unique_timestamp_bytes = 0
+    for entry in byte_list:
+        previous_time = None
+        for progress in entry['progress']:
+            current_time = int(progress['time'])
+            if current_time != previous_time:
+                unique_timestamp_bytes += int(progress['bytecount'])
+                previous_time = current_time
+
+    #pretty print results: table of bytecount and duration comparison between raw and processed
+    print(f"{'Metric':<30} | {'Value':<20}")
+    print("-" * 55)
+    print(f"{'Total Raw Bytes Sent:':<30} | {total_raw_bytes:<20}")
+    print(f"{'Duration of raw bytes sent:':<30} | {list_duration_sec:<20.3f}")
+    print()
+    print(f"{'Sum of byte counts in byte_count':<30} | {total_processed_bytes:<20}")
+    print(f"{'Duration of byte_count timestamps:':<30} | {count_duration_sec:<20.3f}")
+
+    print(f"{'Difference between total bytes and processed bytes':<30} | {total_raw_bytes - total_processed_bytes:<20}")
+    print(f"Percentage difference raw bytes vs unique timestamp bytes: {((total_raw_bytes - total_processed_bytes) / total_raw_bytes) * 100:.2f}%")
+    print("-" * 55)
 
 #Convert the timestamps in byte_count to seconds - #FIXME: confirm that the first timestamp matches the first timestamp in aggregated_time
 def normalize_byte_count(byte_count, output_file_path=None):
@@ -65,7 +107,6 @@ def normalize_byte_count(byte_count, output_file_path=None):
         print(f"Normalized byte_count saved to {output_file_path}")
 
     return normalized_byte_count
-
 
 #2. Validation for aggregated_time list
 def print_aggregated_time_entries(aggregated_time, num_entries):
@@ -194,28 +235,6 @@ def print_throughput_entries(throughput_results, num_entries):
         print(f"Index {i}: Time: {result['time']:.3f}s, Throughput: {result['throughput']:.2f} Mbps")
 
 """
-Print out any throughput entries that exceed a certain threshold (default is 180 Mbps).
-This is used to find any throughput entries that are significantly higher than the rest, so they can be investigated further.
-"""
-def analyze_high_throughput(throughput_results, threshold=180):
-    high_throughput_points = []
-
-    for i, entry in enumerate(throughput_results):
-        if entry['throughput'] > threshold:
-            high_throughput_points.append((i, entry))
-
-    if high_throughput_points:
-        print(f"\nFound {len(high_throughput_points)} points with throughput > {threshold} Mbps:")
-        print("-" * 70)
-        print(f"{'Index':>6} | {'Time (s)':>10} | {'Throughput (Mbps)':>15}")
-        print("-" * 70)
-
-        for index, entry in high_throughput_points:
-            print(f"{index:>6} | {entry['time']:>10.3f} | {entry['throughput']:>15.2f}")
-    else:
-        print(f"\nNo throughput values exceeded {threshold} Mbps")
-
-"""
 Print the distribution of the throughput_results list and the time intervals used to calcuate the throughput.
 This was used for confirming that the time intervals were correctly calculated for setting a threshold for the time window.
 """
@@ -251,6 +270,7 @@ def throughput_mean_median_range(throughput_results):
 
     throughput_values = [result['throughput'] for result in throughput_results]
 
+    num_points = len(throughput_values)
     mean_throughput = sum(throughput_values) / len(throughput_values)
     median_throughput = np.median(throughput_values)
     min_throughput = min(throughput_values)
@@ -258,6 +278,7 @@ def throughput_mean_median_range(throughput_results):
     throughput_range = max_throughput - min_throughput
 
     print("\nThroughput Statistics:")
+    print(f"Number of Throughput Points: {num_points}")
     print(f"Mean Throughput:    {mean_throughput:.2f} Mbps")
     print(f"Median Throughput:  {median_throughput:.2f} Mbps")
     print(f"Minimum Throughput: {min_throughput:.2f} Mbps")

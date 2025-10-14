@@ -215,7 +215,94 @@ def sum_bytecounts_for_timestamps(byte_list, aggregated_time):
                         byte_count[current_list_time] = [bytes_to_add,1]
 
             start_time = -1
-            end_time = -1 #reset start and end time for each event
+            end_time = -1
 
-
+    print("Length of byte_count:", len(byte_count))
     return byte_count
+
+def sum_all_bytecounts_across_http_streams(byte_list, aggregated_time):
+
+    """
+    Sum byte counts for all unique timestamps across HTTP streams.
+
+    This improved implementation:
+    1. Properly handles duplicate timestamps within a single stream
+    2. Aggregates bytes from all streams that contribute to each timestamp
+    3. Tracks the number of unique flows contributing at each timestamp
+
+    Args:
+        byte_list (list): List of HTTP stream entries with progress data
+        aggregated_time (list): Sorted list of all unique timestamps
+
+    Returns:
+        dict: Dictionary mapping timestamps to tuples of (bytecount, number_of_flows)
+    """
+    byte_count = {}
+
+    for timestamp in aggregated_time:
+        byte_count[timestamp] = [0, 0]  # [bytecount, flows] - initialize to zero
+
+    for entry in byte_list: # For each HTTP stream:
+        source_id = entry['id']
+        progress = entry['progress']
+
+        stream_bytes = {} # This structure looks like a http stream's progress list, but with the bytecounts of duplicate timestamps summed into one event
+        for item in progress:
+            timestamp = int(item['time'])
+            bytecount = int(item['bytecount'])
+
+            if timestamp in stream_bytes:
+                stream_bytes[timestamp] += bytecount
+            else:
+                stream_bytes[timestamp] = bytecount
+
+        # Since the stream_bytes is a dictionary, sort the timestamps
+        stream_timestamps = sorted(stream_bytes.keys())
+        if not stream_timestamps:
+            continue  # Skip this stream if there are no timestamps (this should never occur)
+
+        # Distribute bytes across the smaller sub-intervals of the aggregated timestamps
+        for i in range(1, len(aggregated_time)):
+            #smallest sub-interval:
+            current_time = aggregated_time[i]
+            prev_time = aggregated_time[i-1]
+
+            for j in range(len(stream_timestamps) - 1): #  For each HTTP stream
+                #Look at the current interval of timestamps from the stream - this should be >= the intervals in aggregated_time
+                start_time = stream_timestamps[j]
+                end_time = stream_timestamps[j+1]
+
+                # Skip if this interval doesn't overlap with our time window
+                if end_time <= prev_time or start_time >= current_time:
+                    continue
+
+                # Calculate the time-based proportion of bytes to add
+                interval_duration = end_time - start_time
+                if interval_duration <= 0:
+                    continue  # Skip invalid intervals
+
+                # Calculate overlap between the http stream interval and the current sub-interval
+                overlap_start = max(prev_time, start_time)
+                overlap_end = min(current_time, end_time)
+                proportion = (overlap_end - overlap_start) / interval_duration
+
+                if proportion <= 0:
+                    continue  # Skip if no meaningful overlap
+
+                # Calculate bytes to add to the sub-interval from the aggregated timestamps
+                bytes_to_add = stream_bytes[start_time] * proportion
+
+                # Add bytes to the current timestamp entry
+                if current_time in byte_count:
+                    byte_count[current_time][0] += bytes_to_add
+
+                    # Increment the flow count at this timestamp
+                    if j == 0 or (prev_time > stream_timestamps[j-1]):
+                        byte_count[current_time][1] += 1
+
+
+    print(f"Length of byte_count: {len(byte_count)}")
+    return byte_count
+
+def find_percentage_of_test_all_flows_contributing():
+    pass
