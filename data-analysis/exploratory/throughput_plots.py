@@ -388,7 +388,7 @@ def plot_throughput_rema_separated_by_flows(throughput_list_dict, start_time, en
     # Add labels, title, and legend
     ax1.set_xlabel('Time (in seconds)')
     ax1.set_ylabel('Throughput (in Mbps)')
-    ax1.set_ylim(20, 250)
+    ax1.set_ylim(0, 1000)
 
     # if title:
     #     ax1.set_title(title)
@@ -404,7 +404,7 @@ def plot_throughput_rema_separated_by_flows(throughput_list_dict, start_time, en
         labels.append(f'{flow_count} Flows')
 
     # Place the flow count legend in the upper right
-    ax1.legend(handles=handles, labels=labels, loc='upper right')
+    ax1.legend(handles=handles, labels=labels, bbox_to_anchor=(1.05, 1), loc='upper left')
 
     # -------------------  Sockets Gantt Chart (Bottom Subplot) -------------------
     # Create color map for unique socket IDs

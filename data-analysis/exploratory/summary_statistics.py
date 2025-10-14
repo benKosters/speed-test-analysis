@@ -59,18 +59,14 @@ def calculate_occurrence_sums(byte_count):
     for occurrence_count, sum_count in sorted(occurrence_sums.items()):
         print(f"Sum of {occurrence_count} flow{'s' if occurrence_count != 1 else ''} contributing: {sum_count}")
 
-    #return occurrence_sums
+def capture_http_stream_statistics(byte_list, source_times, print_output):
+    """
+    Capture information about each HTTP stream, save it in JSON format
+    """
 
-
-def save_socket_stream_data(byte_list, source_times, outputDir, print_output = False):
-    http_stream_data_structure = {
-        "http_stream_data": [],
-        "socket_data": [],
-        "stream_statistics": [],
-        "socket_statistics": []
-    }
+    http_stream_data = []
     socket_to_streams = {}
-    id_byte_sums = {}
+    byte_counts_sums = {}
 
     #Sum byte counts by http stream
     if byte_list and isinstance(byte_list, list):
@@ -78,7 +74,6 @@ def save_socket_stream_data(byte_list, source_times, outputDir, print_output = F
         if print_output:
             print(f"Loaded byte counts for {len(id_byte_sums)} streams")
 
-    # Collect the stream data
     if print_output:
         print("\nHTTP Stream Information:")
         print("-" * 80)
@@ -100,7 +95,7 @@ def save_socket_stream_data(byte_list, source_times, outputDir, print_output = F
             socket_to_streams[socket].append((stream_id, start_time, end_time))
 
         if print_output:
-            print(f"Stream ID {stream_id}: Start={start_time}, End={end_time}, Duration={stream_duration}ms{socket}")
+            print(f"Stream ID {stream_id}: Start={start_time}, End={end_time}, Duration={stream_duration}ms, Socket = {socket}")
 
         stream_entry = {
             "stream_id": stream_id,
@@ -111,55 +106,69 @@ def save_socket_stream_data(byte_list, source_times, outputDir, print_output = F
             "bytes_transferred": bytes_transferred,
             "stream_throughput_mbps": stream_throughput_mbps
         }
-        http_stream_data_structure["http_stream_data"].append(stream_entry)
+        http_stream_data.append(stream_entry)
 
+    return http_stream_data, socket_to_streams
+
+def capture_socket_statistics(socket_to_streams, print_output):
+    socket_data = []
     # Collect data about the sockets
-        for socket, sources in socket_to_streams.items():
-        # Sort sources by their start time
-            sources.sort(key=lambda x: x[1])  # Sort by start_time
-            for i in range(1, len(sources)):
-                prev_stream_id, _, prev_end_time = sources[i - 1]
-                curr_stream_id, curr_start_time, _ = sources[i]
-                time_diff = curr_start_time - prev_end_time
-                print(f" \nSocket {socket}: Source {prev_stream_id} ends at {prev_end_time}, "
-                    f"Source {curr_stream_id} starts at {curr_start_time}, "
-                    f"Time Difference: {time_diff}ms")
+    for socket, sources in socket_to_streams.items():
+        # Sort http streams by their start time
+        sources.sort(key=lambda x: x[1])
 
-        # Create the socket data entry
+        #create an entry for a socket
         socket_entry = {
             "socket_id": socket,
             "stream_count": len(sources),
-            "stream_ids": [],
+            "stream_ids": [source[0] for source in sources],
             "time_differences": []
         }
 
-        # Calculate timing differences for sources using the same socket
         for i in range(1, len(sources)):
             prev_stream_id, _, prev_end_time = sources[i - 1]
             curr_stream_id, curr_start_time, _ = sources[i]
             time_diff = curr_start_time - prev_end_time
-
-            time_diff_entry = {
-                "first_stream": {
-                    "id": prev_stream_id,
-                    "end_time": prev_end_time
-                },
-                "second_stream": {
-                    "id": curr_stream_id,
-                    "start_time": curr_start_time
-                },
-                "time_difference_ms": time_diff
-            }
-
-            socket_entry["time_differences"].append(time_diff_entry)
 
             if print_output:
                 print(f" \nSocket {socket}: Source {prev_stream_id} ends at {prev_end_time}, "
                     f"Source {curr_stream_id} starts at {curr_start_time}, "
                     f"Time Difference: {time_diff}ms")
 
-        # Add the socket entry to the data structure
-        http_stream_data_structure["socket_data"].append(socket_entry)
+            time_diff_entry = {
+            "first_stream": {
+                "id": prev_stream_id,
+                "end_time": prev_end_time
+            },
+            "second_stream": {
+                "id": curr_stream_id,
+                "start_time": curr_start_time
+            },
+            "time_difference_ms": time_diff
+            }
+
+            socket_entry["time_differences"].append(time_diff_entry)
+
+        socket_data.append(socket_entry)
+    return socket_data
+
+def save_socket_stream_data(byte_list, source_times, outputDir, print_output = False):
+    """
+    Save summary statistics on http streams and sockets for easier comparison across different tests
+    """
+
+    http_stream_data_structure = {
+        "http_stream_data": [],
+        "socket_data": [],
+        "stream_statistics": [],
+        "socket_statistics": []
+    }
+    #Capture statistic
+    http_stream_data, socket_to_streams = capture_http_stream_statistics(byte_list, source_times, print_output)
+    http_stream_data_structure["http_stream_data"] = http_stream_data
+
+    socket_data = capture_socket_statistics(socket_to_streams, print_output)
+    http_stream_data_structure["socket_data"] = socket_data
 
     #collect socket statistics here:
     all_time_differences = []
@@ -209,3 +218,45 @@ def save_socket_stream_data(byte_list, source_times, outputDir, print_output = F
         print(f"Error saving HTTP stream data to {output_file}: {e}")
 
     return http_stream_data_structure
+
+def calculate_percent_of_all_flows_contributing(byte_count, max_flows):
+    """
+    Analyzes byte_count events to determine how many flows contribute to each event.
+
+    Args:
+        byte_count (dict): Dictionary where keys are timestamps and values are [bytecount, num_flows]
+        max_flows (int): The maximum number of flows in the test
+
+    Returns:
+        tuple: (flow_counts_dict, max_flow_percentage)
+    """
+    # Dictionary to track counts for each flow number
+    flow_counts = {f"flow_{i}": 0 for i in range(1, max_flows + 1)}
+
+    # Count events by number of contributing flows
+    total_events = 0
+    for timestamp, value in byte_count.items():
+        num_flows = value[1]  # Second element is the number of flows
+        if 1 <= num_flows <= max_flows:
+            flow_counts[f"flow_{num_flows}"] += 1
+            total_events += 1
+
+    # Format for nicer printing
+    formatted_counts = []
+    for flow_num in range(1, max_flows + 1):
+        key = f"flow_{flow_num}"
+        formatted_counts.append([key, flow_counts[key]])
+
+    # Calculate percentage where max flows contributed
+    max_flow_count = flow_counts[f"flow_{max_flows}"]
+    max_flow_percentage = (max_flow_count / total_events * 100) if total_events > 0 else 0
+
+    print("Count of byte_count events grouped by number of flows contributing to each point:")
+    print(formatted_counts)
+    print(f"Percent of test where max flows contributed: {max_flow_percentage:.2f}%")
+
+    return formatted_counts, max_flow_percentage
+
+
+def calculate_bytes_lost_by_calculating_throughput(throughput_results, byte_list):
+    pass

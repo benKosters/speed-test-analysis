@@ -62,6 +62,7 @@ def calculate_interval_throughput(aggregated_time, byte_count, num_flows, interv
     accumulated_bytes = 0
     accumulated_time = 0
     interval_start = None
+    byte_counts_with_small_intervals = 0
 
     for i in range(len(aggregated_time[1:])):
         current_list_time = aggregated_time[i]
