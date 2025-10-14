@@ -131,40 +131,37 @@ if [ "$PCAP_FLAG" = true ]; then
     # Use a more reliable approach for running tshark
     if [ "$(id -u)" -eq 0 ]; then
         # Already running as root
-        tshark -i $INTERFACE -w "$PCAP_FILE" > "$OUTPUT_DIR/tshark_output.log" 2>&1 &
+        dumpcap -i $INTERFACE -w "$PCAP_FILE" > "$OUTPUT_DIR/capture_output.log" 2>&1 &
         TSHARK_PID=$!
-        echo "Running tshark as root user"
+        echo "Running dumpcap as root"
     else
         # Try running with sudo
         sudo -n true 2>/dev/null
         if [ $? -eq 0 ]; then
-            # We can use sudo without password
-            sudo tshark -i $INTERFACE -w "$PCAP_FILE" > "$OUTPUT_DIR/tshark_output.log" 2>&1 &
-            TSHARK_PID=$!
-            echo "Running tshark with sudo"
-        else
             # Try running directly (if we're in wireshark group)
-            tshark -i $INTERFACE -w "$PCAP_FILE" > "$OUTPUT_DIR/tshark_output.log" 2>&1 &
+            dumpcap -i $INTERFACE -w "$PCAP_FILE" > "$OUTPUT_DIR/capture_output.log" 2>&1 &
             TSHARK_PID=$!
-            echo "Running tshark directly"
+            echo "Running dumpcap directly"
+        else
+            echo "Cannot start dumpcap: requires sudo"
         fi
     fi
 
-    # Check if tshark started successfully
+    # Check if dumpcap started successfully
     sleep 2
     if ! ps -p $TSHARK_PID > /dev/null; then
-        echo "Warning: tshark failed to start. Check $OUTPUT_DIR/tshark_output.log for details."
+        echo "Warning: dumpcap failed to start. Check $OUTPUT_DIR/capture_output.log for details."
         # Output the error for easier debugging
-        if [ -f "$OUTPUT_DIR/tshark_output.log" ]; then
-            echo "tshark error: $(cat "$OUTPUT_DIR/tshark_output.log")"
+        if [ -f "$OUTPUT_DIR/capture_output.log" ]; then
+            echo "dumpcap error: $(cat "$OUTPUT_DIR/capture_output.log")"
         fi
         PCAP_FLAG=false
     else
-        echo "tshark process started with PID $TSHARK_PID"
+        echo "dumpcap process started with PID $TSHARK_PID"
         # Try to observe the first few lines of output
         sleep 3
-        if [ -f "$OUTPUT_DIR/tshark_output.log" ]; then
-            echo "tshark output: $(head -3 "$OUTPUT_DIR/tshark_output.log")"
+        if [ -f "$OUTPUT_DIR/capture_output.log" ]; then
+            echo "dumpcap output: $(head -3 "$OUTPUT_DIR/capture_output.log")"
         fi
     fi
 fi
@@ -175,10 +172,10 @@ JS_COMMAND="$JS_COMMAND -c \"$CONNECTION\""
 JS_COMMAND="$JS_COMMAND -o \"$OUTPUT_DIR\""
 
 # Fix any permission issues in the output directory
-if [ -d "$OUTPUT_DIR" ]; then
-    sudo chown -R $(whoami):$(whoami) "$OUTPUT_DIR"
-    chmod -R 777 "$OUTPUT_DIR"
-fi
+# if [ -d "$OUTPUT_DIR" ]; then
+#     sudo chown -R $(whoami):$(whoami) "$OUTPUT_DIR"
+#     chmod -R 777 "$OUTPUT_DIR"
+# fi
 
 # Run the Puppeteer test
 echo "Launching speed test..."
@@ -194,23 +191,23 @@ if [ "$PCAP_FLAG" = true ]; then
         kill $TSHARK_PID 2>/dev/null
         sleep 1
 
-        # If still running, try sudo kill
-        if ps -p $TSHARK_PID > /dev/null; then
-            sudo kill $TSHARK_PID 2>/dev/null
-            sleep 1
+        # # If still running, try sudo kill
+        # if ps -p $TSHARK_PID > /dev/null; then
+        #     sudo kill $TSHARK_PID 2>/dev/null
+        #     sleep 1
 
-            # If STILL running, use SIGKILL
-            if ps -p $TSHARK_PID > /dev/null; then
-                sudo kill -9 $TSHARK_PID 2>/dev/null
-            fi
-        fi
+        #     # If STILL running, use SIGKILL
+        #     if ps -p $TSHARK_PID > /dev/null; then
+        #         sudo kill -9 $TSHARK_PID 2>/dev/null
+        #     fi
+        # fi
 
         echo "Packet capture completed."
 
         # Ensure the pcap file is accessible
         if [ -f "$PCAP_FILE" ]; then
-            sudo chmod 666 "$PCAP_FILE"
-            ls -la "$PCAP_FILE"
+            # sudo chmod 666 "$PCAP_FILE"
+            # ls -la "$PCAP_FILE"
             echo "Packet capture saved to $PCAP_FILE ($(du -h "$PCAP_FILE" | cut -f1) bytes)"
         else
             echo "Warning: Packet capture file was not created"
