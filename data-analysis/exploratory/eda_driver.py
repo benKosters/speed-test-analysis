@@ -142,7 +142,7 @@ print("max number of flows:", num_flows)
 ss.calculate_percent_of_all_flows_contributing(byte_count, num_flows)
 
 # For a full slate of tests for presenting the final product, calculate throughput for 2 and 10 second intervals with max flow ONLY
-throughput_results_2ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 2, begin_time)
+throughput_results_2ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 1, begin_time)
 throughput_results_50ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 50, begin_time)
 
 #throughput grouped by number of flows contributing - used to show there is still a throughput even though not all flows are contributing
@@ -156,7 +156,7 @@ for flow_count in range(1, num_flows + 1):
     throughput_by_flows_50ms[flow_count] = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, flow_count, 50, begin_time)
 
 # print("Number of througput points for 2ms:", len(throughput_results_2ms))
-# validate.analyze_throughput_intervals(throughput_results_2ms)
+validate.analyze_throughput_intervals(throughput_results_2ms)
 
 print("stats for 2ms interval")
 validate.throughput_mean_median_range(throughput_results_2ms)

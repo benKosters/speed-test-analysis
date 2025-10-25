@@ -2,22 +2,15 @@
 .git/
 node_modules/
 
-
-data-analysis/multi-test-analysis/
-data-analysis/plot_http_stream_transfer_rates.py
-data-analysis/versions/
+streamlit-app/
 data-analysis/socket_level_throughput.py
 
 #these files are not ready yet, but will be added soon
 latency/
 output/
-testing_files/
-
-rabbits_analysis/output/
 
 # Ignore all contents of the ookla-test-results directory
 ookla/test-execution/ookla-test-results/*
-
 # Keep the ookla-test-results directory itself
 !ookla/test-execution/ookla-test-results/.gitkeep
 

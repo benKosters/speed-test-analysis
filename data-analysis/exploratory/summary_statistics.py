@@ -253,6 +253,7 @@ def calculate_percent_of_all_flows_contributing(byte_count, max_flows):
 
     print("Count of byte_count events grouped by number of flows contributing to each point:")
     print(formatted_counts)
+
     print(f"Percent of test where max flows contributed: {max_flow_percentage:.2f}%")
 
     return formatted_counts, max_flow_percentage

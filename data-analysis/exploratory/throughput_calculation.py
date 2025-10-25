@@ -46,13 +46,6 @@ def calculate_interval_throughput(aggregated_time, byte_count, num_flows, interv
     The function only calculates throughput when all specified flows are contributing
     to ensure consistent measurements across the timeline.
 
-    Args:
-        aggregated_time (list): Sorted list of all unique timestamps from all sources
-        byte_count (dict): Dictionary mapping timestamps to tuples of (bytecount, number_of_flows)
-        num_flows (int): Expected number of flows that should be contributing
-        interval_threshold (int): Minimum time interval in milliseconds for throughput calculation
-        begin_time (int): Starting timestamp for normalization to relative time
-
     Returns:
         list: List of dictionaries containing throughput measurements, each with:
             - 'time': Time since begin_time in seconds (float)
@@ -88,11 +81,11 @@ def calculate_interval_throughput(aggregated_time, byte_count, num_flows, interv
         # If we've reached or exceeded the threshold, calculate throughput
         if accumulated_time >= interval_threshold:
             # Calculate throughput for this combined interval
-            throughput = (accumulated_bytes/accumulated_time) * 1000  # Convert to bytes/second
+            throughput = (accumulated_bytes/accumulated_time) * 1000  # conversion to bytes/second
 
             throughput_results.append({
-                'time': (interval_start - begin_time)/1000,  # Time since start in seconds
-                'throughput': throughput * (8/1000000)  # Convert to Mbps
+                'time': (interval_start - begin_time)/1000,  # time since start in seconds
+                'throughput': throughput * (8/1000000)  # conversion to Mbps
             })
 
             # Reset accumulators

@@ -46,9 +46,9 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
 
 (async () => {
     //const browser = await puppeteer.launch({ headless: false }); // Set to true to run headless
-    //const keyarg = "--ssl-key-log-file=./sslkeylog.log"; //Save SSL keys to decrypt HTTP traffic
+    const keyarg = "--ssl-key-log-file=" + output_dir + "/sslkeylog.log"; //Save SSL keys to decrypt HTTP traffic
     const netlogarg = "--log-net-log=" + output_dir + "/netlog.json";
-    const browser = await puppeteer.launch({ headless: "new", args: [netlogarg, '--no-sandbox'] }) //#FIXME add keyarg later to save SSL keys
+    const browser = await puppeteer.launch({ headless: 'new', args: [keyarg, netlogarg, '--no-sandbox'] }) //#FIXME add keyarg later to save SSL keys
     const page = await browser.newPage();
 
     await page.setViewport({ width: 1280, height: 800 });

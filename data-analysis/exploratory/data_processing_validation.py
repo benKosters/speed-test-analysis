@@ -245,8 +245,7 @@ def analyze_throughput_intervals(throughput_results):
 
     interval_diffs = {}
     for i in range(1, len(throughput_results)):
-        diff_ms = (throughput_results[i]['time'] - throughput_results[i-1]['time']) * 1000  # Convert to milliseconds
-        diff_key = f"{diff_ms:.1f}ms"
+        diff_key = round((throughput_results[i]['time'] - throughput_results[i-1]['time']) * 1000, 2)
         interval_diffs[diff_key] = interval_diffs.get(diff_key, 0) + 1
 
     # Print the interval differences in a readable format
@@ -254,9 +253,10 @@ def analyze_throughput_intervals(throughput_results):
     print(f"{'Time Diff':>10} | {'Count':>10} | {'Percentage':>10}")
     total_entries = len(throughput_results) - 1
 
-    for interval, count in sorted(interval_diffs.items()):
+    interval_diffs = sorted(interval_diffs.items())
+    for interval, count in interval_diffs:
         percentage = (count / total_entries) * 100
-        print(f"{interval:>10} | {count:>10} | {percentage:>9.1f}%")
+        print(f"{interval:>10}ms | {count:>10} | {percentage:>9.1f}%")
     print("-" * 40)
 
 """
