@@ -7,7 +7,7 @@
  * This event filtering script can be used for both download and upload, and these are the files produced:
  * For download:
  *      1) byte_time_list.json - the byte counts divided by http stream/source
- *      2) latency.json - the unloaded latency for each http stream/source
+ *      2) unloaded_latency.json - the unloaded latency for each http stream/source
  *      3) loaded_latency.json - the loaded latency for each http stream/source
  *      4) socket_byte_time_list.sjon (the byte counts divided by socket instead of by http stream)
  *      6) socketIds.txt - the socket IDs associated with each http stream ID
@@ -46,9 +46,6 @@ checkFilePath(urlPath);
 directory = path.dirname(urlPath);
 console.log("Output files will be written to:", directory);
 
-
-
-//Function that returns the url's type and form
 const getUrlTypeAndForm = (urlJSON) => {
     let urltype = "", urltype2 = "", form = [], form2 = [];
     // Check for latency URLs - prioritize idle_latency over older unload field
@@ -112,6 +109,17 @@ if (urlTypeAndForm.count === 1) {
         const results = [];
         const unloaded_latency = [];//for UNLOADED latency
         const loaded_latency = [];//For loaded latency
+
+        const latency_data = {
+            "unloaded_latency": {
+                "streams": [],
+                "latency_ms": []
+            }
+            , "loaded_latency": {
+                "streams": [],
+                "latency_ms": []
+            }
+        };
 
         if (!events || !netlog_constants) {
             console.error("The Netlog data or constants are missing");

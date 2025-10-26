@@ -16,14 +16,7 @@
 const fs = require('fs');
 const path = require('path');
 const { checkFilePath, readFileSync, ensureDirectoryExists } = require('./file-utils');
-
-if (process.argv.length < 3) {
-    console.error('Please provide a netlog or json file path');
-    process.exit(1);
-}
-
-const filePath = process.argv[2];
-checkFilePath(filePath);
+const { url } = require('inspector');
 
 function fixAndParseJSON(jsonString, originalFilePath) {
     // Handles two cases for Puppeteer-collected netlog.json:
@@ -32,7 +25,6 @@ function fixAndParseJSON(jsonString, originalFilePath) {
 
     jsonString = jsonString.trim();
 
-    // First try parsing as-is in case the JSON is already valid
     try {
         return JSON.parse(jsonString);
     } catch (e) {
@@ -98,192 +90,149 @@ function fixAndParseJSON(jsonString, originalFilePath) {
     }
 }
 
-try {
-    const data = readFileSync(filePath);
-    const result = fixAndParseJSON(data, filePath);
-    console.log("JSON parsed successfully.");
+// Helper function to check if a URL has already been picked up
+function isUniqueUrl(list, newUrl) {
+    return !list.some(pair => pair[0] === newUrl);
+}
 
-    // Extract only the events array
-    const events = result.events;
+function collectUrlsFromNetlog(filePath) {
+    try {
+        const data = readFileSync(filePath);
+        const result = fixAndParseJSON(data, filePath);
+        console.log("JSON parsed successfully.");
 
-    // Define separate URL list objects
-    let download_url_list = {
-        "download": [],
-        "upload": [],
-        "load": [],      // Keep for backward compatibility (will be populated with loaded latency)
-        "unload": [],    // Will be populated with idle latency
-        "idle_latency": [], // New: explicitly identify idle latency URLs
-        "loaded_latency": [] // New: explicitly identify loaded latency URLs
-    };
+        // Extract only the events array
+        const events = result.events;
 
-    let upload_url_list = {
-        "download": [],
-        "upload": [],
-        "load": [],      // Keep for backward compatibility (will be populated with loaded latency)
-        "unload": [],    // Will be populated with idle latency
-        "idle_latency": [], // New: explicitly identify idle latency URLs
-        "loaded_latency": [] // New: explicitly identify loaded latency URLs
-    };
+        url_list = {
+            "download": [],
+            "upload": [],
+            "hello": []
+        }
 
-    // Collect all hello URLs for timing analysis
-    let allHelloUrls = [];
+        // Process each event to collect URLs
+        events.forEach((eventData, index) => {
+            try {
+                const DOWNLOAD_PATTERN = '8080/download?nocache=';
+                const UPLOAD_PATTERN = '8080/upload?nocache=';
+                const HELLO_PATTERN = '8080/hello?nocache=';
 
-    // Process each event to collect URLs
-    events.forEach((eventData, index) => {
-        try {
-            const DOWNLOAD_PATTERN = '8080/download?nocache=';
-            const UPLOAD_PATTERN = '8080/upload?nocache=';
-            const LOAD_PATTERN = '8080/hello?nocache=';
+                if (eventData.hasOwnProperty('params') &&
+                    typeof (eventData.params) === 'object' &&
+                    eventData.params.hasOwnProperty('url')) {
 
+                    const sourceId = eventData.source.id;
 
-
-            if (eventData.hasOwnProperty('params') &&
-                typeof (eventData.params) === 'object' &&
-                eventData.params.hasOwnProperty('url')) {
-                //check for download URLs
-                if (eventData.params.url.includes(DOWNLOAD_PATTERN)) {
-                    if (!download_url_list.download.includes(eventData.params.url)) {
-                        download_url_list.download.push(eventData.params.url);
+                    //check for download URLs
+                    if (eventData.params.url.includes(DOWNLOAD_PATTERN)) {
+                        if (isUniqueUrl(url_list.download, eventData.params.url)) {
+                            url_list.download.push([eventData.params.url, sourceId]);
+                        }
                     }
-                }
-                //check for more download URLs
-                if (eventData.params.hasOwnProperty('created') &&
-                    eventData.params.hasOwnProperty('key') &&
-                    eventData.params.key.includes(DOWNLOAD_PATTERN)) {
-                    const urlParts = eventData.params.key.split(' ');
-                    if (urlParts.length >= 3) {
-                        const extractedUrl = urlParts[2];
-                        if (!download_url_list.download.includes(extractedUrl)) {
-                            download_url_list.download.push(extractedUrl);
+                    //check for more download URLs
+                    if (eventData.params.hasOwnProperty('created') &&
+                        eventData.params.hasOwnProperty('key') &&
+                        eventData.params.key.includes(DOWNLOAD_PATTERN)) {
+                        const urlParts = eventData.params.key.split(' ');
+                        if (urlParts.length >= 3) {
+                            const extractedUrl = urlParts[2];
+                            if (isUniqueUrl(url_list.download, extractedUrl)) {
+                                url_list.download.push([extractedUrl, eventData.source.id]);
+                            }
+                        }
+                    }
+                    //check for upload URLs
+                    if (eventData.params.url.includes(UPLOAD_PATTERN)) {
+                        if (isUniqueUrl(url_list.upload, eventData.params.url)) {
+                            url_list.upload.push([eventData.params.url, sourceId]);
+                        }
+                    }
+                    //check for hello URLs
+                    if (eventData.params.url.includes(HELLO_PATTERN)) {
+                        if (isUniqueUrl(url_list.hello, eventData.params.url)) {
+                            url_list.hello.push([eventData.params.url, sourceId]);
                         }
                     }
                 }
-                //check for upload URLs
-                if (eventData.params.url.includes(UPLOAD_PATTERN)) {
-                    if (!upload_url_list.upload.includes(eventData.params.url)) {
-                        upload_url_list.upload.push(eventData.params.url);
-                    }
-                }
-                //check for hello URLs - collect them for timing analysis
-                if (eventData.params.url.includes(LOAD_PATTERN)) {
-                    if (!allHelloUrls.includes(eventData.params.url)) {
-                        allHelloUrls.push(eventData.params.url);
-                    }
-                }
-            }
+                return url_list;
 
-        } catch (error) {
-            console.error('Error processing event at index:', index);
-            console.error('Event data:', eventData);
-        }
-    });
-
-
-    // Time-based URL separation for hello endpoints
-    function separateHelloUrlsByTiming(netlogData, helloUrls) {
-        const events = netlogData.events;
-
-        // Find timing boundaries
-        const downloadTimes = [];
-        const helloTimes = [];
-
-        events.forEach(event => {
-            if (event.params && event.params.url) {
-                if (event.params.url.includes('/download') || event.params.url.includes('/upload')) {
-                    downloadTimes.push(parseInt(event.time));
-                } else if (event.params.url.includes('/hello')) {
-                    helloTimes.push({ time: parseInt(event.time), url: event.params.url });
-                }
+            } catch (error) {
+                console.error('Error processing event at index:', index);
+                console.error('Event data:', eventData);
             }
         });
 
-        if (downloadTimes.length === 0) {
-            // No download/upload, all hello URLs are idle latency
-            return {
-                idleLatencyUrls: helloUrls,
-                loadedLatencyUrls: []
-            };
-        }
+    } catch (error) {
+        console.error('Error reading or processing file:', error.message); // Log the error message
+        console.error('Stack trace:', error.stack); // Log the stack trace for debugging
+        process.exit(1);
+    }
+    return url_list;
+}
 
-        const firstDownloadTime = Math.min(...downloadTimes);
-        const lastDownloadTime = Math.max(...downloadTimes);
+function separateHelloUrlsByTiming(url_list) {
+    /**
+     *   time ---------------------------------------------------------------------------------------->
+     *   hello ------- download ------- hello ------- upload ------- hello
+     *    |                               |                            |
+     *    unload_urls                download_load_urls         upload_load_urls
+     *
+     * Hello urls will appear in three phases:
+     * 1) Before the first download URL - these are "unload" URLs
+     * 2) Between the first download and first upload URL - these are "download_load" URLs
+     * 3) After the first upload URL - these are "upload_load" URLs
+     */
 
-        console.log(`DEBUG: First download time: ${firstDownloadTime}`);
-        console.log(`DEBUG: Total hello URLs to classify: ${helloUrls.length}`);
-        console.log(`DEBUG: Total hello events found: ${helloTimes.length}`);
 
-        // Separate hello URLs by timing
-        const idleLatencyUrls = [];
-        const loadedLatencyUrls = [];
-
-        // Group hello events by URL to find their timing
-        const urlTimings = {};
-        helloTimes.forEach(entry => {
-            if (!urlTimings[entry.url]) {
-                urlTimings[entry.url] = [];
-            }
-            urlTimings[entry.url].push(parseInt(entry.time));
-        });
-
-        // Classify each hello URL based on its timing
-        helloUrls.forEach(url => {
-            const times = urlTimings[url] || [];
-            if (times.length === 0) {
-                // Fallback: if we can't find timing, assume it's loaded latency
-                loadedLatencyUrls.push(url);
-                return;
-            }
-
-            const avgTime = times.reduce((a, b) => a + b, 0) / times.length;
-
-            // If average time is before first download, it's idle latency
-            // If it's during/after downloads, it's loaded latency
-            if (avgTime < firstDownloadTime) {
-                idleLatencyUrls.push(url);
-            } else {
-                loadedLatencyUrls.push(url);
-            }
-        });
-
-        return {
-            idleLatencyUrls,
-            loadedLatencyUrls
-        };
+    let first_download_id, first_upload_id;
+    let unload_urls = [], download_load_urls = [], upload_load_urls = [];
+    if (url_list.download.length !== 0) {
+        first_download_id = url_list.download[0][1];
+    }
+    if (url_list.upload.length !== 0) {
+        first_upload_id = url_list.upload[0][1];
     }
 
-    //FIXME - Uncomment this section once verified
-    //------------------------------------------------------------------------------------------------------------
-    // // Now separate hello URLs by timing to distinguish idle vs loaded latency
-    // console.log("Separating hello URLs by timing...");
-    // console.log("Total hello URLs collected:", allHelloUrls.length);
+    for (let i = 0; i < url_list.hello.length; i++) { //for each hello URL
+        let hello_id = url_list.hello[i][1];
+        let url
+        if (first_download_id && hello_id < first_download_id) { //if the ID comes before the first download ID, it is an unload URL
+            unload_urls.push(url_list.hello[i][0]);
+        } else if (first_download_id && first_upload_id && hello_id > first_download_id && hello_id < first_upload_id) { //if the ID comes after the first download ID but before the first upload ID, it is a download load URL
+            download_load_urls.push(url_list.hello[i][0]);
+        } else if (first_upload_id && hello_id > first_upload_id) {//if the ID comes after the first upload ID, it is an upload load URL
+            upload_load_urls.push(url_list.hello[i][0]);
+        }
+    }
 
-    // if (allHelloUrls.length > 0) {
-    //     const separation = separateHelloUrlsByTiming(jsonData, allHelloUrls);
+    latency_urls = {
+        "unload": unload_urls,
+        "download_load": download_load_urls,
+        "upload_load": upload_load_urls
+    }
 
-    //     // Populate the URL lists with separated data
-    //     download_url_list.unload = separation.idleLatencyUrls;
-    //     download_url_list.idle_latency = separation.idleLatencyUrls;
-    //     download_url_list.load = separation.loadedLatencyUrls;
-    //     download_url_list.loaded_latency = separation.loadedLatencyUrls;
+    return latency_urls;
+}
 
-    //     upload_url_list.unload = separation.idleLatencyUrls;
-    //     upload_url_list.idle_latency = separation.idleLatencyUrls;
-    //     upload_url_list.load = separation.loadedLatencyUrls;
-    //     upload_url_list.loaded_latency = separation.loadedLatencyUrls;
+function main() {
+    if (process.argv.length < 3) {
+        console.error('Please provide a netlog or json file path');
+        process.exit(1);
+    }
 
-    //     console.log("Idle latency URLs found:", separation.idleLatencyUrls.length);
-    //     console.log("Loaded latency URLs found:", separation.loadedLatencyUrls.length);
-    // } else {
-    //     console.log("No hello URLs found for latency measurement");
-    // }
+    const filePath = process.argv[2];
+    checkFilePath(filePath);
 
-    //------------------------------------------------------------------------------------------------------------
     const netlogDir = path.dirname(filePath);
+
+    let url_list = collectUrlsFromNetlog(filePath);
+
+    let latency_urls = separateHelloUrlsByTiming(url_list);
+
 
     // Define paths for download and upload directories
     const downloadDir = path.join(netlogDir, 'download');
     const uploadDir = path.join(netlogDir, 'upload');
-
     // Define paths for the output files
     const downloadUrlsPath = path.join(downloadDir, 'download_urls.json');
     const uploadUrlsPath = path.join(uploadDir, 'upload_urls.json');
@@ -291,21 +240,39 @@ try {
     // Check if the output directories exist or create them
     const downloadDirExists = ensureDirectoryExists(downloadDir);
     const uploadDirExists = ensureDirectoryExists(uploadDir);
-
     // Check if output files already exist
     const downloadUrlsExists = fs.existsSync(downloadUrlsPath);
     const uploadUrlsExists = fs.existsSync(uploadUrlsPath);
 
+
     // Print summary of found URLs
-    console.log("Number of download URLs found:", download_url_list.download.length);
-    console.log("Number of load URLs found:", download_url_list.load.length);
-    console.log("Number of idle latency URLs found:", download_url_list.idle_latency.length);
-    console.log("Number of upload URLs found:", upload_url_list.upload.length);
+    console.log("Number of download URLs found:", url_list.download.length);
+    console.log("Number of upload URLs found:", url_list.upload.length);
+    console.log("Number of hello URLs found:", url_list.hello.length);
+    console.log();
+    console.log("Number of unload URLs found:", latency_urls.unload.length);
+    console.log("Number of download load URLs found:", latency_urls.download_load.length);
+    console.log("Number of upload load URLs found:", latency_urls.upload_load.length);
+    console.log();
 
     // Exit if both files already exist
     if (downloadUrlsExists && uploadUrlsExists) {
         console.log(`Both ${downloadUrlsPath} and ${uploadUrlsPath} already exist. Exiting.`);
         process.exit(0);
+    }
+
+    let download_url_list = {
+        download: url_list.download.map(pair => pair[0]),
+        upload: [],
+        load: latency_urls.download_load,
+        unload: latency_urls.unload
+    }
+
+    let upload_url_list = {
+        download: [],
+        upload: url_list.upload.map(pair => pair[0]),
+        load: latency_urls.upload_load,
+        unload: latency_urls.unload
     }
 
     // Write download_urls.json if it doesn't exist
@@ -327,9 +294,12 @@ try {
     }
 
     console.log('URL extraction completed successfully.');
-
-} catch (error) {
-    console.error('Error reading or processing file:', error.message); // Log the error message
-    console.error('Stack trace:', error.stack); // Log the stack trace for debugging
-    process.exit(1);
 }
+
+if (require.main === module) {
+    main();
+}
+
+module.exports = {
+    fixAndParseJSON
+};
