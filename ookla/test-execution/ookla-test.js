@@ -6,6 +6,8 @@ This file should generate 2 files:
 
 const puppeteer = require('puppeteer');
 const { Command } = require('commander');
+const fs = require('fs');
+const path = require('path');
 
 const program = new Command();
 
@@ -107,8 +109,52 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
         console.log("There is an error with selecting the start button.");
     }
 
-    // Wait for 35 seconds for the test to finish (the test is 30 seconds) - rudimentary, but works for now
-    await new Promise(resolve => setTimeout(resolve, 50000));
+    try {
+        const pingLatencySelector = '#container > div.pre-fold.mobile-test-complete > div.main-content > div > div > div > div.pure-u-custom-speedtest > div.speedtest-view > div > div.main-view > div > div.result-area.result-area-test > div > div > div.result-container-speed.result-container-speed-active > div.result-item-details > div > span.result-item.result-item-latency.result-data-latency-item.updated > span'
+        await page.waitForSelector(pingLatencySelector, { timeout: 90000 });
+        const latency = await page.$eval(pingLatencySelector, el => el.textContent);
+
+        const downloadLatencySelector = '#container > div.pre-fold.mobile-test-complete > div.main-content > div > div > div > div.pure-u-custom-speedtest > div.speedtest-view > div > div.main-view > div > div.result-area.result-area-test > div > div > div.result-container-speed.result-container-speed-active > div.result-item-details > div > span.result-item.result-item-latencydown.result-data-latency-item.updated > span';
+        await page.waitForSelector(downloadLatencySelector, { timeout: 90000 });
+        const downloadLatency = await page.$eval(downloadLatencySelector, el => el.textContent);
+
+        const uploadLatencySelector = '#container > div.pre-fold.mobile-test-complete > div.main-content > div > div > div > div.pure-u-custom-speedtest > div.speedtest-view > div > div.main-view > div > div.result-area.result-area-test > div > div > div.result-container-speed.result-container-speed-active > div.result-item-details > div > span.result-item.result-item-latencyup.result-data-latency-item.updated > span';
+        await page.waitForSelector(uploadLatencySelector, { timeout: 90000 });
+        const uploadLatency = await page.$eval(uploadLatencySelector, el => el.textContent);
+
+        const downloadSpeedSelector = '#container > div.pre-fold.mobile-test-complete > div.main-content > div > div > div > div.pure-u-custom-speedtest > div.speedtest-view > div > div.main-view > div > div.result-area.result-area-test > div > div > div.result-container-speed.result-container-speed-active > div.result-container-data > div.result-item-container.result-item-container-align-center > div > div.result-data.u-align-left > span';
+        await page.waitForSelector(downloadSpeedSelector, { timeout: 5000 });
+        const downloadSpeed = await page.$eval(downloadSpeedSelector, el => el.textContent);
+
+        const uploadSpeedSelector = '#container > div.pre-fold.mobile-test-complete > div.main-content > div > div > div > div.pure-u-custom-speedtest > div.speedtest-view > div > div.main-view > div > div.result-area.result-area-test > div > div > div.result-container-speed.result-container-speed-active > div.result-container-data > div.result-item-container.result-item-container-align-left > div > div.result-data.u-align-left > span';
+        await page.waitForSelector(uploadSpeedSelector, { timeout: 5000 });
+        const uploadSpeed = await page.$eval(uploadSpeedSelector, el => el.textContent);
+
+        const time = new Date();
+        const testResults = {
+            date: time.toISOString().split('T')[0],
+            time: time.toTimeString().split(' ')[0],
+            server: server,
+            connection_type: num_flows,
+            ping_latency: parseInt(latency.trim()),
+            download_latency: parseInt(downloadLatency.trim()),
+            upload_Latency: parseInt(uploadLatency.trim()),
+            ookla_download_speed: parseFloat(downloadSpeed.trim()),
+            ookla_upload_speed: parseFloat(uploadSpeed.trim())
+        }
+
+        const resultsPath = path.join(output_dir, 'speedtest_result.json');
+        fs.writeFileSync(resultsPath, JSON.stringify(testResults, null, 2));
+
+        console.log("\nPing Latency:", latency);
+        console.log("Download Latency:", downloadLatency);
+        console.log("Upload Latency:", uploadLatency);
+        console.log("\nDownload Speed:", downloadSpeed, "Mbps");
+        console.log("Upload Speed:", uploadSpeed, "Mbps\n");
+    }
+    catch (e) {
+        console.log("There was in issue with the test finishing")
+    }
 
     // Third, close the popup and take a screenshot of the results
     try {
@@ -116,7 +162,8 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
         await page.waitForSelector(popupSelector, { timeout: 3000 });
         await page.click(popupSelector);
         console.log("Popup closed.");
-    } catch {
+    }
+    catch {
         console.log("Popup did not appear.");
     }
 

@@ -37,6 +37,7 @@ if (process.argv.length != 4) {
 const filePath = process.argv[2];
 const urlPath = process.argv[3];
 let directory;
+let testType = "";
 
 // Check if the files exist
 checkFilePath(filePath);
@@ -45,56 +46,179 @@ checkFilePath(urlPath);
 // Get the directory that the url file is in (this is where we want to place the output)
 directory = path.dirname(urlPath);
 console.log("Output files will be written to:", directory);
+const urlJSON = parseJSONFromFile(urlPath);
 
-const getUrlTypeAndForm = (urlJSON) => {
-    let urltype = "", urltype2 = "", form = [], form2 = [];
-    // Check for latency URLs - prioritize idle_latency over older unload field
-    if (urlJSON.idle_latency && urlJSON.idle_latency.length > 0) {
-        urltype2 = "unload";  // Keep internal naming as "unload" for consistency
-        form2 = urlJSON.idle_latency;
-    } else if (urlJSON.load.length > 0) {
-        urltype2 = "load";
-        form2 = urlJSON.load;
-    } else if (urlJSON.unload.length > 0) {
-        urltype2 = "unload";
-        form2 = urlJSON.unload;
-    }
-
+//Function that returns the test type, as well as the split urls
+const splitTestTypeUrls = (urlJSON) => {
+    let split_urls = [], split_unloaded_urls = [], split_loaded_urls = [];
+    let testUrls = [];
     if (urlJSON.download.length > 0) {
-        urltype = "download";
-        form = urlJSON.download;
+        testType = 'download';
+        testUrls = urlJSON.download;
     } else if (urlJSON.upload.length > 0) {
-        urltype = "upload";
-        form = urlJSON.upload;
+        testType = 'upload';
+        testUrls = urlJSON.upload;
     }
 
-    //You can either have only one url type or two (download/upload and load/unload)
-    if (urltype) {
-        if (urltype2) {
-            return { count: 2, urltype: urltype, form: form, urltype2: urltype2, form2: form2 }
-        }
-        else {
-            return { count: 1, urltype: urltype, form: form }
+    for (var i = 0; i < testUrls.length; i++) {
+        var parts = testUrls[i].split("/");
+        var split_url = parts.slice(3).join("/");
+        split_urls.push(split_url);
+    }
+
+    if (urlJSON.unload.length > 0) {
+        for (var i = 0; i < urlJSON.unload.length; i++) {
+            var parts = urlJSON.unload[i].split("/");
+            var split_url = parts.slice(3).join("/");
+            split_unloaded_urls.push(split_url);
         }
     }
-    else {
-        return { count: 1, urltype: urltype2, form: form2 };
+    if (urlJSON.load.length > 0) {
+        for (var i = 0; i < urlJSON.load.length; i++) {
+            var parts = urlJSON.load[i].split("/");
+            var split_url = parts.slice(3).join("/");
+            split_loaded_urls.push(split_url);
+        }
+    }
+    console.log("Example", testType, "split URL:", split_urls[0]);
+    console.log("Example loaded split URL:", split_loaded_urls[0]);
+    console.log("Example unloaded split URL:", split_unloaded_urls[0])
+    return { split_urls: split_urls, split_unloaded_urls: split_unloaded_urls, split_loaded_urls: split_loaded_urls };
+};
+
+const mapEventNamesToIds = (logEventTypes, targetMap) => {
+    //Store event names and IDs, as the IDs change for every test
+    Object.entries(logEventTypes).forEach(([name, id]) => {
+        targetMap[name] = id;
+    });
+    console.log("Number of event types:", Object.keys(targetMap).length);
+};
+
+const captureThroughputData = (eventData, results, byte_time_list, current_position_list, testType, logEvent_ids) => {
+    // Check if this event belongs to a recognized source from the speed test server
+    if (!results.some(result => result.sourceID && result.sourceID.id === eventData.source.id)) {
+        return;
+    }
+
+    // Download events
+    if (((eventData.type === logEvent_ids['URL_REQUEST_JOB_FILTERED_BYTES_READ']) ||
+        (eventData.type === logEvent_ids['URL_REQUEST_BYTES_READ'])) &&
+        eventData.hasOwnProperty('params') &&
+        (testType == "download") &&
+        eventData.params.hasOwnProperty('byte_count')) {
+
+        let existingIdIndex = byte_time_list.findIndex(item => item.id === eventData.source.id);
+        if (existingIdIndex === -1) {
+            // If id does not exist, add it to byte_time_list (progress will store an object containing the byte_count and timestamp)
+            byte_time_list.push({ id: eventData.source.id, type: testType, progress: [] });
+            existingIdIndex = byte_time_list.length - 1;
+        }
+        // Push new progress values
+        byte_time_list[existingIdIndex].progress.push({ bytecount: eventData.params.byte_count, time: eventData.time });
+
+        // Debug logging (can be removed in production)
+        if (eventData.params.hasOwnProperty('source_dependency') && eventData.type === 160) {
+            // console.log(eventData.params.source_dependency.id);
+        }
+    }
+    // Upload events
+    else if (eventData.type === logEvent_ids['UPLOAD_DATA_STREAM_READ'] &&
+        eventData.hasOwnProperty('params') &&
+        (testType == "upload") &&
+        eventData.params.hasOwnProperty('current_position')) {
+
+        let existingIdIndex = current_position_list.findIndex(item => item.id === eventData.source.id);
+        if (existingIdIndex === -1) {
+            // If id does not exist, add it to current_position_list
+            current_position_list.push({ id: eventData.source.id, type: testType, progress: [] });
+            existingIdIndex = current_position_list.length - 1;
+        }
+        // Push new progress values (larger uploads may have multiple events recording current position, similar to how large downloads may have multiple events for byte_count)
+        current_position_list[existingIdIndex].progress.push({ current_position: eventData.params.current_position, time: eventData.time });
     }
 };
 
+const captureLatencyData = (eventData, latencyStreams, urlList, eventType) => {
+    const sourceId = eventData.source.id;
+    const time = Number(eventData.time);
 
-const urlJSON = parseJSONFromFile(urlPath);
-const urlTypeAndForm = getUrlTypeAndForm(urlJSON);
-let urltype, form, urltype2, form2
-if (urlTypeAndForm.count === 1) {
-    urltype = urlTypeAndForm.urltype;
-    form = urlTypeAndForm.form
-} else {
-    urltype = urlTypeAndForm.urltype;
-    form = urlTypeAndForm.form;
-    urltype2 = urlTypeAndForm.urltype2;
-    form2 = urlTypeAndForm.form2;
-}
+    // Find existing stream or create new one
+    let existingStream = latencyStreams.find(item => item.id === sourceId);
+
+    if (!existingStream) {
+        existingStream = {
+            id: sourceId,
+            send_time: null,
+            recv_time: null,
+            rtt: null
+        };
+        latencyStreams.push(existingStream);
+    }
+
+    // Handle send time - event 176 (HTTP_TRANSACTION_SEND_REQUEST_HEADERS)
+    if (eventData.type === logEvent_ids['HTTP_TRANSACTION_SEND_REQUEST_HEADERS'] &&
+        eventData.params?.line) {
+        existingStream.send_time = time;
+    }
+
+    // Handle receive time - event 181 (HTTP_TRANSACTION_READ_RESPONSE_HEADERS)
+    if (eventData.type === logEvent_ids['HTTP_TRANSACTION_READ_RESPONSE_HEADERS']) {
+        existingStream.recv_time = time;
+        // Calculate RTT if we have both times
+        if (existingStream.send_time !== null && existingStream.recv_time !== null) {
+            existingStream.rtt = existingStream.recv_time - existingStream.send_time;
+        }
+    }
+};
+
+const calculateLatencyStatistics = (latencyStreams) => {
+    // Make sure both send and receive times are present
+    const validRtts = latencyStreams
+        .filter(stream => stream.rtt !== null && stream.rtt >= 0)
+        .map(stream => stream.rtt);
+
+    if (validRtts.length === 0) {
+        return {
+            count_rtt: 0,
+            mean_rtt: 0,
+            median_rtt: 0
+        };
+    }
+
+    const count_rtt = validRtts.length;
+
+    const sum = validRtts.reduce((acc, rtt) => acc + rtt, 0);
+    const mean_rtt = sum / count_rtt;
+
+    const sortedRtts = [...validRtts].sort((a, b) => a - b);
+    let median_rtt;
+
+    if (sortedRtts.length % 2 === 0) {
+        // Even number of values - average of middle two
+        const mid1 = sortedRtts[sortedRtts.length / 2 - 1];
+        const mid2 = sortedRtts[sortedRtts.length / 2];
+        median_rtt = (mid1 + mid2) / 2;
+    } else {
+        median_rtt = sortedRtts[Math.floor(sortedRtts.length / 2)];
+    }
+
+    return {
+        count_rtt: count_rtt,
+        mean_rtt: Math.round(mean_rtt * 100) / 100,
+        median_rtt: Math.round(median_rtt * 100) / 100
+    };
+};
+
+const updateAllLatencyStatistics = (latency_data) => {
+    latency_data.test_latency.latency_ms = calculateLatencyStatistics(latency_data.test_latency.streams);
+    latency_data.unloaded_latency.latency_ms = calculateLatencyStatistics(latency_data.unloaded_latency.streams);
+    latency_data.loaded_latency.latency_ms = calculateLatencyStatistics(latency_data.loaded_latency.streams);
+
+    console.log("\nLatency metrics using GET and POST URLs:")
+    console.log("Test latency statistics:", latency_data.test_latency.latency_ms);
+    console.log("Unloaded latency statistics:", latency_data.unloaded_latency.latency_ms);
+    console.log("Loaded latency statistics:", latency_data.loaded_latency.latency_ms);
+};
 
 // Immediately invoked anonomous function to read the contents of the Netlog file
 (() => {
@@ -107,17 +231,31 @@ if (urlTypeAndForm.count === 1) {
         const byte_time_list = []; //For download data
         const current_position_list = []; //For upload data
         const results = [];
-        const unloaded_latency = [];//for UNLOADED latency
-        const loaded_latency = [];//For loaded latency
 
         const latency_data = {
+            "test_latency": {
+                "streams": [],
+                "latency_ms": {
+                    "count_rtt": 0,
+                    "mean_rtt": 0,
+                    "median_rtt": 0
+                }
+            },
             "unloaded_latency": {
                 "streams": [],
-                "latency_ms": []
-            }
-            , "loaded_latency": {
+                "latency_ms": {
+                    "count_rtt": 0,
+                    "mean_rtt": 0,
+                    "median_rtt": 0
+                }
+            },
+            "loaded_latency": {
                 "streams": [],
-                "latency_ms": []
+                "latency_ms": {
+                    "count_rtt": 0,
+                    "mean_rtt": 0,
+                    "median_rtt": 0
+                }
             }
         };
 
@@ -126,66 +264,11 @@ if (urlTypeAndForm.count === 1) {
             process.exit(1);
         }
 
-
-        const mapEventNamesToIds = (logEventTypes, targetMap) => {
-            //Store event names and IDs, as the IDs change for every test
-            Object.entries(logEventTypes).forEach(([name, id]) => {
-                targetMap[name] = id;
-            });
-            console.log("Number of event types:", Object.keys(targetMap).length);
-        };
-
         mapEventNamesToIds(netlog_constants.logEventTypes, logEvent_ids);
+        const { split_urls, split_unloaded_urls, split_loaded_urls } = splitTestTypeUrls(urlJSON);
 
-        // 1) Download/Upload URLS (for throughput calculation)
-        //only store the relative attributes of the urls, removing the domain - saves the cache, guid, and size attributes
-        //we need this to check for the proper HTTP_TRANSACTION_SEND_REQUEST_HEADERS event for throughput
-        //Form contains download/upload urls, form2 contains the load urls
-        var split_urls = [];
-        if (urltype === "download" || urltype === "upload") {
-            for (var i = 0; i < form.length; i++) {
-                var parts = form[i].split("/");
-                var split_url = parts.slice(3).join("/");
-                split_urls.push(split_url);
-            }
-        }
-        console.log("Example split url: ", split_urls[0]);
-
-        // 2) Unload URLS (for unloaded latency calculation)
-        var split_unload_urls = [];
-        if (urltype === "unload" || urltype2 === "unload") {
-            const unload_form = (urltype === "unload") ? form : form2;
-            for (var i = 0; i < unload_form.length; i++) {
-                var parts = unload_form[i].split("/");
-                var split_url = parts.slice(3).join("/");
-                split_unload_urls.push(split_url);
-            }
-        }
-        console.log("Example unload url: ", split_unload_urls[0]);
-
-        // 3) Loaded URLS
-        // Store the relative attributes of the loaded urls, which we will need for finding the HTTP_TRANSACTION_SEND_REQUEST_HEADERS event
-        // of the URL_REQUEST events that measure loaded latency.
-        var split_loaded_urls = [];
-
-        // Check for loaded latency URLs - prioritizing loaded_latency over older load field
-        if (urlJSON.loaded_latency && urlJSON.loaded_latency.length > 0) {
-            for (var i = 0; i < urlJSON.loaded_latency.length; i++) {
-                var parts = urlJSON.loaded_latency[i].split("/");
-                var split_loaded_url = parts.slice(3).join("/");
-                split_loaded_urls.push(split_loaded_url);
-            }
-        } else if (urltype === "load" || urltype2 === "load") {
-            const load_form = (urltype === "load") ? form : form2;
-            for (var i = 0; i < load_form.length; i++) {
-                var parts = load_form[i].split("/");
-                var split_loaded_url = parts.slice(3).join("/");
-                split_loaded_urls.push(split_loaded_url);
-            }
-        }
-
-        console.log(urltype, "URLs found: ", split_urls.length);
-        console.log("Unload URLs found: ", split_unload_urls.length);
+        console.log(testType, "URLs found: ", split_urls.length);
+        console.log("Unload URLs found: ", split_unloaded_urls.length);
         console.log("Load URLs found: ", split_loaded_urls.length);
 
         //Begin parsing each event in the Netlog data.
@@ -204,12 +287,10 @@ if (urlTypeAndForm.count === 1) {
                     eventData.hasOwnProperty('params') &&
                     typeof (eventData.params) === 'object' &&
                     eventData.params.hasOwnProperty('url') &&
-                    form.some(url => eventData.params.url.includes(url) &&
+                    split_urls.some(url => eventData.params.url.includes(url) &&
                         eventData.type === logEvent_ids['REQUEST_ALIVE']
                     )
                 ) {
-                    //if the conditions are met, add entire source(src.id, start_time, type), along with the index and the rest of the event data
-                    //We can the use the source ID to find other events with the same id, becuase they also come from the test server.
                     if (eventData.source.hasOwnProperty('id')) {
                         const id = eventData.source;
                         results.push({ sourceID: id, index: index, dict: eventData }); //by including the entire event data, the source info is present twice. Interesting...
@@ -218,132 +299,69 @@ if (urlTypeAndForm.count === 1) {
 
                 }
 
-                /**check #4 --> UNLOADED latency (INDEPENDENT OF RESULTS ARRAY)
-                To calculate UNLOADED latency, we need to find events that use UNLOAD URLs only
-                These are separate small requests made BEFORE the main test to measure baseline idle latency from Ookla.
-
-                This check is independent of the main upload/download events and doesn't require
-                the event to be in the results array.
-                */
-                //Start by checking for unload latency events - only if we have unload URLs
-                if (
-                    eventData.hasOwnProperty('params') &&
-                    typeof (eventData.params) === 'object' &&
-                    split_unload_urls.length > 0  // Only process if we have unload URLs
-                    && (
-                        (eventData.params.hasOwnProperty('line') && split_unload_urls.some(url => String(eventData.params.line).includes(url))) ||
-                        (eventData.params.hasOwnProperty('url') && split_unload_urls.some(url => String(eventData.params.url).includes(url)))
-                    )
-                ) {
-                    if (eventData.type === logEvent_ids['HTTP_TRANSACTION_SEND_REQUEST_HEADERS']) {
-                        const existingIdIndex = unloaded_latency.findIndex(item => item.sourceID === eventData.source.id);
-                        if (existingIdIndex !== -1) {
-                            // If id already exists, add to the same dictionary item
-                            if (!unloaded_latency[existingIdIndex].send_time) {
-                                unloaded_latency[existingIdIndex].send_time = [];
-                            }
-                            unloaded_latency[existingIdIndex].send_time.push(eventData.time);
-                        } else {
-                            //add to the list if the id is not already in the list
-                            unloaded_latency.push({ sourceID: eventData.source.id, send_time: [eventData.time] });
-                        }
-                    }
-                }
-                //If the event is http receive response headers for unload URLs, then add timestamp as "recv_time"
-                if (eventData.type === logEvent_ids['HTTP_TRANSACTION_READ_RESPONSE_HEADERS'] &&
-                    unloaded_latency.some(item => item.sourceID === eventData.source.id)) {
-                    const existingIdIndex = unloaded_latency.findIndex(item => item.sourceID === eventData.source.id);
-                    if (existingIdIndex !== -1) {
-                        if (!unloaded_latency[existingIdIndex].recv_time) {
-                            unloaded_latency[existingIdIndex].recv_time = [];
-                        }
-                        // If id already exists, add to the same dictionary item
-                        unloaded_latency[existingIdIndex].recv_time.push(eventData.time);
-                    } else {
-                        unloaded_latency.push({ sourceID: eventData.source.id, recv_time: [eventData.time] });
-                    }
-                }
-
                 /**check #2:
-                Now that we have recorded the source ID of the first event in an event stream that came from the server, we can check subsequent events
-                to see if they have an ID that matches. If the ID is in the results, we can look to see if it is the right event type.
-                If the source is not recognized, it does not come from the speed test server and is irelevant.
+                Collect byte counts for computing throughput
                 */
                 if (
                     results.some(result => result.sourceID && result.sourceID.id === eventData.source.id)
                 ) {
-                    //check #3a --> Download events
-                    if (((eventData.type === logEvent_ids['URL_REQUEST_JOB_FILTERED_BYTES_READ']) || (eventData.type === logEvent_ids['URL_REQUEST_BYTES_READ'])) && eventData.hasOwnProperty('params') && (urltype == "download") && eventData.params.hasOwnProperty('byte_count')) {
-                        let existingIdIndex = byte_time_list.findIndex(item => item.id === eventData.source.id);
-                        if (existingIdIndex === -1) {
-                            // If id does not exist, add it to byte_time_list (progress will store an object containing the byte_count and timestamp)
-                            byte_time_list.push({ id: eventData.source.id, type: urltype, progress: [] });
-                            existingIdIndex = byte_time_list.length - 1; //
-                        }
-                        // Push new progress values
-                        byte_time_list[existingIdIndex].progress.push({ bytecount: eventData.params.byte_count, time: eventData.time });
-                        //type 160 --> used for debugging, this if statement can be ignored
-                        if (eventData.params.hasOwnProperty('source_dependency') && eventData.type === 160) {
-                            // console.log(eventData.params.source_dependency.id);
-                        }
-                        //check #3b --> upload events
-                    } else if (eventData.type === logEvent_ids['UPLOAD_DATA_STREAM_READ'] && eventData.hasOwnProperty('params') && ((urltype == "upload" || urltype2 == "upload") && eventData.params.hasOwnProperty('current_position'))) {
-                        let existingIdIndex = current_position_list.findIndex(item => item.id === eventData.source.id);
-                        if (existingIdIndex === -1) {
-                            // If id does not exist, add it to current_position_list
-                            current_position_list.push({ id: eventData.source.id, type: urltype, progress: [] });
-                            existingIdIndex = current_position_list.length - 1;
-                        }
-                        // Push new progress values (larger uploads may have multiple events recording current position, similar to how large downloads may have multiple events for byte_count)
-                        current_position_list[existingIdIndex].progress.push({ current_position: eventData.params.current_position, time: eventData.time });
-                    }
+                    captureThroughputData(eventData, results, byte_time_list, current_position_list, testType, logEvent_ids);
                 }
-                /**
-                Check #5
-                We also need to look for the loaded latency events. These are URL_REQUEST event streams that use the "hello?=" urls, and these occur after the download URL_REQUEST events.
-                The loaded latency is calculated the same way as the unloaded latency, but the only difference is that we need to find use events 176 and 181 that are associated with the
-                loaded urls, which are in in the split_loaded_urls list.
-                 */
-                if (
-                    eventData.hasOwnProperty('params') &&
+
+                // check #3 --> UNLOADED latency (hello URLs)
+                if (eventData.hasOwnProperty('params') &&
                     typeof (eventData.params) === 'object' &&
-                    (
-                        // Check for traditional load/unload url types
-                        ((urltype == "load") || (urltype == "unload") || (urltype2 == "load") || (urltype2 == "unload")) ||
-                        // Check for new loaded_latency field
-                        (urlJSON.loaded_latency && urlJSON.loaded_latency.length > 0)
-                    )
-                    && (
-                        (eventData.params.hasOwnProperty('line') && split_loaded_urls.some(url => String(eventData.params.line).includes(url))) ||
-                        (eventData.params.hasOwnProperty('url') && split_loaded_urls.some(url => String(eventData.params.url).includes(url)))
-                    )
-                ) {
-                    if (eventData.type === logEvent_ids['HTTP_TRANSACTION_SEND_REQUEST_HEADERS']) {
-                        const id = eventData.source;
-                        const existingIdIndex = loaded_latency.findIndex(item => item.sourceID === eventData.source.id); //look for the source ID
-                        if (existingIdIndex !== -1) {
-                            // If id already exists, add to the same dictionary item
-                            if (!loaded_latency[existingIdIndex].send_time) {
-                                loaded_latency[existingIdIndex].send_time = []; //Why make it a list? There is only one "send_time" value
-                            }
-                            loaded_latency[existingIdIndex].send_time.push(eventData.time);
-                        } else {
-                            //add to the list if the id is not already in the list
-                            loaded_latency.push({ sourceID: eventData.source.id, send_time: [eventData.time] });
-                        }
+                    split_unloaded_urls.length > 0) {
+
+                    // Handle send events (type 176) with URL matching
+                    if (eventData.type === logEvent_ids['HTTP_TRANSACTION_SEND_REQUEST_HEADERS'] &&
+                        eventData.params.hasOwnProperty('line') &&
+                        split_unloaded_urls.some(url => String(eventData.params.line).includes(url))) {
+                        captureLatencyData(eventData, latency_data.unloaded_latency.streams, split_unloaded_urls, 'unloaded');
+                    }
+
+                    // Handle receive events (type 181) - only if source already exists from send event
+                    if (eventData.type === logEvent_ids['HTTP_TRANSACTION_READ_RESPONSE_HEADERS'] &&
+                        latency_data.unloaded_latency.streams.some(stream => stream.id === eventData.source.id)) {
+                        captureLatencyData(eventData, latency_data.unloaded_latency.streams, split_unloaded_urls, 'unloaded');
                     }
                 }
-                if (eventData.type === logEvent_ids['HTTP_TRANSACTION_READ_RESPONSE_HEADERS'] && loaded_latency.some(item => item.sourceID === eventData.source.id)) {
-                    const id = eventData.source;
-                    const existingIdIndex = loaded_latency.findIndex(item => item.sourceID === eventData.source.id);
-                    if (existingIdIndex !== -1) {
-                        if (!loaded_latency[existingIdIndex].recv_time) {
-                            loaded_latency[existingIdIndex].recv_time = [];
-                        }
-                        // If id already exists, add to the same dictionary item
-                        loaded_latency[existingIdIndex].recv_time.push(eventData.time);
-                    } else {
-                        loaded_latency.push({ sourceID: eventData.source.id, recv_time: [eventData.time] });
+
+                // check #4 --> LOADED latency
+                if (eventData.hasOwnProperty('params') &&
+                    typeof (eventData.params) === 'object' &&
+                    split_loaded_urls.length > 0) {
+
+                    // Handle send events (type 176) with URL matching
+                    if (eventData.type === logEvent_ids['HTTP_TRANSACTION_SEND_REQUEST_HEADERS'] &&
+                        eventData.params.hasOwnProperty('line') &&
+                        split_loaded_urls.some(url => String(eventData.params.line).includes(url))) {
+                        captureLatencyData(eventData, latency_data.loaded_latency.streams, split_loaded_urls, 'loaded');
+                    }
+
+                    // Handle receive events (type 181) - only if source already exists from send event
+                    if (eventData.type === logEvent_ids['HTTP_TRANSACTION_READ_RESPONSE_HEADERS'] &&
+                        latency_data.loaded_latency.streams.some(stream => stream.id === eventData.source.id)) {
+                        captureLatencyData(eventData, latency_data.loaded_latency.streams, split_loaded_urls, 'loaded');
+                    }
+                }
+
+                // check #5 --> TEST latency (download/upload URLs)
+                if (eventData.hasOwnProperty('params') &&
+                    typeof (eventData.params) === 'object' &&
+                    split_urls.length > 0) {
+
+                    // Handle send events (type 176) with URL matching
+                    if (eventData.type === logEvent_ids['HTTP_TRANSACTION_SEND_REQUEST_HEADERS'] &&
+                        eventData.params.hasOwnProperty('line') &&
+                        split_urls.some(url => String(eventData.params.line).includes(url))) {
+                        captureLatencyData(eventData, latency_data.test_latency.streams, split_urls, 'test');
+                    }
+
+                    // Handle receive events (type 181) - only if source already exists from send event
+                    if (eventData.type === logEvent_ids['HTTP_TRANSACTION_READ_RESPONSE_HEADERS'] &&
+                        latency_data.test_latency.streams.some(stream => stream.id === eventData.source.id)) {
+                        captureLatencyData(eventData, latency_data.test_latency.streams, split_urls, 'test');
                     }
                 }
 
@@ -351,27 +369,18 @@ if (urlTypeAndForm.count === 1) {
                 console.error("Error parsing line", index, ":", error);
             }
         });
+        updateAllLatencyStatistics(latency_data);
 
         // Write byte_time_list (id, type, and progress [{bytecount, timestamp}]
         writeFileSync(path.join(directory, 'byte_time_list.json'), JSON.stringify(byte_time_list, null, 2));
 
         //write loaded latency send an receive time to loaded_latency.json
-        writeFileSync(path.join(directory, 'loaded_latency.json'), JSON.stringify(loaded_latency, null, 2));
+        writeFileSync(path.join(directory, 'latency_data.json'), JSON.stringify(latency_data, null, 2));
 
         //if type is upload, write the current_position_list to a file
-        if (urltype == "upload") {
+        if (testType == "upload") {
             writeFileSync(path.join(directory, 'current_position_list.json'), JSON.stringify(current_position_list, null, 2));
         }
-
-        //write unloaded_latency list to the latency file --(source ID, send and receive time)
-        //Only write unloaded latency file if we have unload URLs
-        if (split_unload_urls.length > 0) {
-            console.log("number of unloaded latency events: ", unloaded_latency.length);
-            writeFileSync(path.join(directory, 'latency.json'), JSON.stringify(unloaded_latency, null, 2));
-        } else {
-            console.log("No unload URLs found - skipping unloaded latency calculation");
-        }
-
 
     } catch (error) {
         console.error("Error reading the file:", error);
@@ -379,11 +388,6 @@ if (urlTypeAndForm.count === 1) {
 })();
 
 /**
- For every event stream, the source dependancy ID must be collected.
-
- Uses the source IDs from the current_position_list to collect
- the source dependancy IDs from an event stream.
-
  Writes these source dependancy IDs to httpStreamJobIds.txt.
 Example HTTP stream job entry: [ 5781, 5783 ] where 5781 is the http stream ID and 5783 is the source dependency ID
  */
@@ -394,7 +398,7 @@ const processHttpStreamJobIds = () => {
     const uploadDir = path.dirname(absoluteUrlPath);
     let currentPosListPath;
     // Paths inside the upload directory
-    if (urltype == "upload") {
+    if (testType == "upload") {
         currentPosListPath = path.join(uploadDir, "current_position_list.json");
     } else {
         currentPosListPath = path.join(uploadDir, "byte_time_list.json");
@@ -538,7 +542,7 @@ const processByteCounts = () => {
                         if (!byte_time_list.some(item => item.id === socketID[eventIndex])) {
                             byte_time_list.push({
                                 id: socketID[eventIndex],
-                                type: urltype,
+                                type: testType,
                                 progress: []
                             });
                         }
@@ -561,17 +565,13 @@ const processByteCounts = () => {
     }
 };
 
-console.log("Testing url types: ", urltype, "and", urltype2);
+console.log("Testing url type:", testType);
 processHttpStreamJobIds();
 processSocketIds();
 //At this point in time, we are only looking at the byte counts at the socket level for upload tests only.
-// if (urltype == "upload") {
+// if (testType == "upload") {
 //     processByteCounts();
 // }
-
-// Since httpStreamJobIds is an intermediary file, we can delete it (socketIds.txt contains the same information)
-//  #FIXME: why even write it to a file in the first place, just save it as a variable....
-// deleteFile("httpStreamJobIds.txt")
 
 const normalizeTestData = (byteFile, currentFile, latencyFile) => {
     // Load byte list first to determine test type

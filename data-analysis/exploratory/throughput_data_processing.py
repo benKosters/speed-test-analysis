@@ -57,7 +57,6 @@ def normalize_test_data(byte_file, current_file, latency_file):
             print("Size of latency list:", len(latency_data), "\n")
 
             # Create a dictionary to map IDs to the first receive time from the latency file
-            #latency_time_map = {entry['sourceID']: int(entry['recv_time'][0]) for entry in latency_data} #old way that is too rigid... would crash if a value does not exist
             latency_time_map = {entry['sourceID']: int(entry['recv_time'][0]) for entry in latency_data
                        if 'recv_time' in entry and entry['recv_time']}
             print("Unique source IDs:", len(latency_time_map))
@@ -164,62 +163,6 @@ def aggregate_timestamps_and_find_stream_durations(byte_list, socket_file):
 
     return aggregated_time, source_times, begin_time
 #-----------------------------------Bytecount Summation---------------------------------------------
-def sum_bytecounts_for_timestamps(byte_list, aggregated_time):
-    """
-    Sum byte counts for timestamps over intervals.
-
-    For every source ID, loop through the entire aggregated time list.
-    For every interval of time, loop through every element in that ID's progress list.
-    Find the start and end times for each interval, then calculate the proportion of bytes
-    to add to each timestamp.
-
-    If there are multiple byte counts added to a particular timestamp, then there are multiple
-    flows producing data.
-
-    Args:
-        byte_list (list): List of byte transfer entries with progress data
-        aggregated_time (list): Sorted list of all unique timestamps
-
-    Returns:
-        dict: Dictionary mapping timestamps to tuples of (bytecount, number_of_flows)
-    """
-    byte_count = {}
-    for entry in byte_list: #for each source ID
-        end_time = -1
-        start_time = -1
-        for i in range(len(aggregated_time[1:])): #loop through entire aggregated_time list, setting the window size to be between each event
-            current_list_time = aggregated_time[i]
-            prev_list_time = aggregated_time[i-1]
-
-            progress = entry['progress']
-            for item in progress:
-                if (end_time != -1 and start_time!= -1):
-                    break
-
-                if ((int(item['time']) > prev_list_time) and start_time==-1):
-                    break
-
-                if (int(item['time']) <= prev_list_time):
-                    start_time = int(item['time'])
-
-                elif (int(item['time']) >= current_list_time):
-                    end_time = int(item['time'])
-                if (end_time != -1):
-                    proportion = (current_list_time - prev_list_time) / (end_time - start_time)
-                    bytes_to_add = int(item['bytecount']) * proportion
-                    if current_list_time in byte_count:
-                        byte_count[current_list_time][0] += bytes_to_add
-                        byte_count[current_list_time][1] += 1
-
-                    else:
-                        byte_count[current_list_time] = [bytes_to_add,1]
-
-            start_time = -1
-            end_time = -1
-
-    print("Length of byte_count:", len(byte_count))
-    return byte_count
-
 def sum_all_bytecounts_across_http_streams(byte_list, aggregated_time):
 
     """

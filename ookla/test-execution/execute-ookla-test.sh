@@ -222,9 +222,8 @@ fi
 echo "{
   \"server\": \"$SERVER\",
   \"connection\": \"$CONNECTION\",
-  \"timestamp\": \"$(date '+%Y-%m-%d %H:%M:%S')\",
-  "dev_mode": $DEV_MODE,
-  "pcap_enabled": $PCAP_FLAG
+  \"date\": \"$(date '+%Y-%m-%d')\",
+  \"time\": \"$(date '%H:%M:%S')\"
 }" > "$OUTPUT_DIR/metadata.json"
 
 echo "---------------------------------------------"

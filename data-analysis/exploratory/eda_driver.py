@@ -124,8 +124,6 @@ if os.path.exists(byte_count_file):
     print(f"Converted {len(byte_count)} timestamp keys from strings to integers")
 else:
     print(f"Calculating and saving byte_count data: {byte_count_file}")
-
-    #byte_count = tp_proc.sum_bytecounts_for_timestamps(byte_list, aggregated_time) #this function has bugs!
     byte_count = tp_proc.sum_all_bytecounts_across_http_streams(byte_list, aggregated_time)
     # Save byte_count
     with open(byte_count_file, 'w') as f:

@@ -15,80 +15,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { checkFilePath, readFileSync, ensureDirectoryExists } = require('./file-utils');
+const { checkFilePath, readFileSync, ensureDirectoryExists, fixAndParseJSON } = require('./file-utils');
 const { url } = require('inspector');
 
-function fixAndParseJSON(jsonString, originalFilePath) {
-    // Handles two cases for Puppeteer-collected netlog.json:
-    // 1. Missing closing `]}` at the end
-    // 2. Has trailing comma, and is missing closing `]}`
-
-    jsonString = jsonString.trim();
-
-    try {
-        return JSON.parse(jsonString);
-    } catch (e) {
-        console.log('Error with Netlog JSON data:', e.message);
-
-        let fixedString;
-
-        // Check if the string ends with a comma (case 2)
-        if (jsonString.endsWith(',')) {
-            // Remove trailing comma then add closing brackets
-            fixedString = jsonString.slice(0, -1) + ']}';
-            console.log('Detected trailing comma, removing it and adding closing brackets');
-        } else {
-            // Just add closing brackets (case 1)
-            fixedString = jsonString + ']}';
-            console.log('Adding missing closing brackets');
-        }
-
-        try {
-            const parsedJson = JSON.parse(fixedString);
-
-            if (parsedJson) {
-                console.log('Writing fixed JSON back to file:', originalFilePath);
-                fs.writeFileSync(originalFilePath, fixedString);
-                console.log('JSON file has been fixed and saved.');
-            }
-
-            return parsedJson;
-        } catch (e2) {
-            console.error('Failed to parse JSON with first fix attempt:', e2.message);
-
-            // If the first attempt failed, try the other approach as a fallback
-            try {
-                if (jsonString.endsWith(',')) {
-                    // We already tried removing the comma, now just try adding brackets
-                    fixedString = jsonString + ']}';
-                } else {
-                    // We already tried adding brackets, now try removing potential hidden comma and adding brackets
-                    // This handles cases where there might be a non-visible comma or other character
-                    const lastBraceIndex = jsonString.lastIndexOf('}');
-                    if (lastBraceIndex !== -1) {
-                        fixedString = jsonString.substring(0, lastBraceIndex + 1) + ']}';
-                    } else {
-                        console.error('Could not find a closing brace to fix the JSON');
-                        return null;
-                    }
-                }
-
-                const parsedJson = JSON.parse(fixedString);
-
-                if (parsedJson) {
-                    console.log('Writing fixed JSON back to file with second attempt:', originalFilePath);
-                    fs.writeFileSync(originalFilePath, fixedString);
-                    console.log('JSON file has been fixed and saved with second approach.');
-                }
-
-                return parsedJson;
-            } catch (e3) {
-                console.error('Failed to parse JSON even after multiple fixing attempts:', e3.message);
-                return null;
-            }
-        }
-    }
-}
 
 // Helper function to check if a URL has already been picked up
 function isUniqueUrl(list, newUrl) {
@@ -153,6 +82,7 @@ function collectUrlsFromNetlog(filePath) {
                             url_list.hello.push([eventData.params.url, sourceId]);
                         }
                     }
+
                 }
                 return url_list;
 
@@ -172,46 +102,66 @@ function collectUrlsFromNetlog(filePath) {
 
 function separateHelloUrlsByTiming(url_list) {
     /**
-     *   time ---------------------------------------------------------------------------------------->
-     *   hello ------- download ------- hello ------- upload ------- hello
-     *    |                               |                            |
-     *    unload_urls                download_load_urls         upload_load_urls
+     * time ---------------------------------------------------------------------------------------->
+     *        first_download_id --- last_download_id     first_upload_id --- last_upload_id
+     *        |                        |                    |                    |
+     * hello  |  hello    hello       |       hello        |       hello       |      hello
+     *   |    |    |        |         |         |          |         |         |         |
+     *   |    |    |        |         |         |          |         |         |         |
+     *   A    B    C        D         E         F          G         H         I         J
      *
-     * Hello urls will appear in three phases:
-     * 1) Before the first download URL - these are "unload" URLs
-     * 2) Between the first download and first upload URL - these are "download_load" URLs
-     * 3) After the first upload URL - these are "upload_load" URLs
+     * A: unloaded_download (id < first_download_id)
+     * B,C,D: loaded_download (first_download_id < id < last_download_id)
+     * E,F,G: unloaded_upload (last_download_id < id < first_upload_id)
+     * H,I,J: loaded_upload (id > first_upload_id)
      */
 
+    let first_download_id, last_download_id, first_upload_id;
+    let unloaded_download_urls = [],
+        loaded_download_urls = [],
+        unloaded_upload_urls = [],
+        loaded_upload_urls = [];
 
-    let first_download_id, first_upload_id;
-    let unload_urls = [], download_load_urls = [], upload_load_urls = [];
+    // Get boundary IDs
     if (url_list.download.length !== 0) {
         first_download_id = url_list.download[0][1];
+        last_download_id = url_list.download[url_list.download.length - 1][1];
     }
     if (url_list.upload.length !== 0) {
         first_upload_id = url_list.upload[0][1];
     }
 
-    for (let i = 0; i < url_list.hello.length; i++) { //for each hello URL
-        let hello_id = url_list.hello[i][1];
-        let url
-        if (first_download_id && hello_id < first_download_id) { //if the ID comes before the first download ID, it is an unload URL
-            unload_urls.push(url_list.hello[i][0]);
-        } else if (first_download_id && first_upload_id && hello_id > first_download_id && hello_id < first_upload_id) { //if the ID comes after the first download ID but before the first upload ID, it is a download load URL
-            download_load_urls.push(url_list.hello[i][0]);
-        } else if (first_upload_id && hello_id > first_upload_id) {//if the ID comes after the first upload ID, it is an upload load URL
-            upload_load_urls.push(url_list.hello[i][0]);
+    // Process each hello URL
+    for (let i = 0; i < url_list.hello.length; i++) {
+        const [url, hello_id] = url_list.hello[i];
+
+        if (first_download_id && hello_id < first_download_id) {
+            // Before first download = unloaded download
+            unloaded_download_urls.push(url);
+        } else if (first_download_id && last_download_id &&
+            hello_id > first_download_id && hello_id < last_download_id) {
+            // Between first and last download = loaded download
+            loaded_download_urls.push(url);
+        } else if (last_download_id && first_upload_id &&
+            hello_id > last_download_id && hello_id < first_upload_id) {
+            // Between last download and first upload = unloaded upload
+            unloaded_upload_urls.push(url);
+        } else if (first_upload_id && hello_id > first_upload_id) {
+            // After first upload = loaded upload
+            loaded_upload_urls.push(url);
         }
     }
 
-    latency_urls = {
-        "unload": unload_urls,
-        "download_load": download_load_urls,
-        "upload_load": upload_load_urls
-    }
-
-    return latency_urls;
+    return {
+        "download": {
+            "unload": unloaded_download_urls,
+            "load": loaded_download_urls
+        },
+        "upload": {
+            "unload": unloaded_upload_urls,
+            "load": loaded_upload_urls
+        }
+    };
 }
 
 function main() {
@@ -229,11 +179,24 @@ function main() {
 
     let latency_urls = separateHelloUrlsByTiming(url_list);
 
+    // // Save all URLs into one file
+    // const urlFilePath = path.join(netlogDir, 'all_urls.json');
+    // const urlFileExists = fs.existsSync(urlFilePath);
+
+    // if (!urlFileExists) {
+    //     console.log("Saving all URLs");
+    //     fs.writeFileSync(urlFilePath, JSON.stringify(url_list, null, 2));
+    //     console.log(`Successfully wrote download URLs to ${urlFilePath}`);
+    // }
+    // else {
+    //     console.log("URL file has already been saved, skipping saving");
+    // }
+
 
     // Define paths for download and upload directories
     const downloadDir = path.join(netlogDir, 'download');
     const uploadDir = path.join(netlogDir, 'upload');
-    // Define paths for the output files
+    //Define paths for the output files
     const downloadUrlsPath = path.join(downloadDir, 'download_urls.json');
     const uploadUrlsPath = path.join(uploadDir, 'upload_urls.json');
 
@@ -250,10 +213,12 @@ function main() {
     console.log("Number of upload URLs found:", url_list.upload.length);
     console.log("Number of hello URLs found:", url_list.hello.length);
     console.log();
-    console.log("Number of unload URLs found:", latency_urls.unload.length);
-    console.log("Number of download load URLs found:", latency_urls.download_load.length);
-    console.log("Number of upload load URLs found:", latency_urls.upload_load.length);
-    console.log();
+    console.log("Download test latency URLs:");
+    console.log("  Unloaded:", latency_urls.download.unload.length);
+    console.log("  Loaded:", latency_urls.download.load.length);
+    console.log("Upload test latency URLs:");
+    console.log("  Unloaded:", latency_urls.upload.unload.length);
+    console.log("  Loaded:", latency_urls.upload.load.length);
 
     // Exit if both files already exist
     if (downloadUrlsExists && uploadUrlsExists) {
@@ -264,15 +229,15 @@ function main() {
     let download_url_list = {
         download: url_list.download.map(pair => pair[0]),
         upload: [],
-        load: latency_urls.download_load,
-        unload: latency_urls.unload
+        load: latency_urls.download.load,
+        unload: latency_urls.download.unload
     }
 
     let upload_url_list = {
         download: [],
         upload: url_list.upload.map(pair => pair[0]),
-        load: latency_urls.upload_load,
-        unload: latency_urls.unload
+        load: latency_urls.upload.load,
+        unload: latency_urls.upload.unload
     }
 
     // Write download_urls.json if it doesn't exist
