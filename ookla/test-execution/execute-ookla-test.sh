@@ -3,17 +3,17 @@
 # Get the directory of this script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Create results directory in the test-execution folder
+# Create results directory in the test-execution folder - this file should always exist, but the it is required for the output files
 if [ ! -d "$SCRIPT_DIR/ookla-test-results" ]; then
     mkdir "$SCRIPT_DIR/ookla-test-results"
 fi
 
-# Default values
+# Default parameters
 SERVER="Michwave"
 CONNECTION="multi"
 OUTPUT_DIR=""
 PCAP_FLAG=false
-DEV_MODE=false
+DEV_MODE=false # dev mode will just place output in dev_tests/, rewriting any existing files - used when developing this tool
 INTERFACE="eth0"
 
 # Function to display help
@@ -76,7 +76,7 @@ done
 if [ -z "$OUTPUT_DIR" ]; then
     # Create output directory if not specified
     if [ "$DEV_MODE" = true ]; then
-        # For dev mode, use/create dev_tests directory
+        # For dev mode, use/create the dev_tests directory
         if [ ! -d "$SCRIPT_DIR/ookla-test-results/dev_tests" ]; then
             mkdir -p "$SCRIPT_DIR/ookla-test-results/dev_tests"
         else
@@ -85,9 +85,8 @@ if [ -z "$OUTPUT_DIR" ]; then
         fi
         OUTPUT_DIR="$SCRIPT_DIR/ookla-test-results/dev_tests"
     else
-        # Generate timestamp for standard mode
         TIMESTAMP=$(date +"%Y-%m-%d_%H%M")
-        # Create a directory with server, connection type, and timestamp
+        # Create a standard directory name using server + connection type + timestamp --> this ensures a unique identifier for each test
         SERVER_FORMATTED=$(echo "$SERVER" | tr '[:upper:]' '[:lower:]' | tr ' ' '_')
         OUTPUT_DIR="$SCRIPT_DIR/ookla-test-results/${SERVER_FORMATTED}-${CONNECTION}-${TIMESTAMP}"
         mkdir -p "$OUTPUT_DIR"
@@ -114,7 +113,7 @@ fi
 echo "---------------------------------------------"
 
 
-# Set up file path for pcap file if pcap flag is enabled
+# If PCAP is enabled, create the pcap file and begin the dumpcap process
 if [ "$PCAP_FLAG" = true ]; then
     PCAP_FILE="$OUTPUT_DIR/tcp_capture.pcap"
 
@@ -128,9 +127,8 @@ if [ "$PCAP_FLAG" = true ]; then
 
     echo "Running pcap on $INTERFACE."
 
-    # Use a more reliable approach for running tshark
     if [ "$(id -u)" -eq 0 ]; then
-        # Already running as root
+        # Assume that the user is running as root
         dumpcap -i $INTERFACE -w "$PCAP_FILE" > "$OUTPUT_DIR/capture_output.log" 2>&1 &
         TSHARK_PID=$!
         echo "Running dumpcap as root"
@@ -138,12 +136,12 @@ if [ "$PCAP_FLAG" = true ]; then
         # Try running with sudo
         sudo -n true 2>/dev/null
         if [ $? -eq 0 ]; then
-            # Try running directly (if we're in wireshark group)
+            # Use dumpcap via the wireshart group permissions
             dumpcap -i $INTERFACE -w "$PCAP_FILE" > "$OUTPUT_DIR/capture_output.log" 2>&1 &
             TSHARK_PID=$!
-            echo "Running dumpcap directly"
+            echo "Running dumpcap via wireshark group permissions"
         else
-            echo "Cannot start dumpcap: requires sudo"
+            echo "Cannot start dumpcap: requires elevated permissions"
         fi
     fi
 
@@ -151,7 +149,7 @@ if [ "$PCAP_FLAG" = true ]; then
     sleep 2
     if ! ps -p $TSHARK_PID > /dev/null; then
         echo "Warning: dumpcap failed to start. Check $OUTPUT_DIR/capture_output.log for details."
-        # Output the error for easier debugging
+        # Print out the error log if it exists
         if [ -f "$OUTPUT_DIR/capture_output.log" ]; then
             echo "dumpcap error: $(cat "$OUTPUT_DIR/capture_output.log")"
         fi
@@ -165,20 +163,14 @@ if [ "$PCAP_FLAG" = true ]; then
         fi
     fi
 fi
-# Build the command to run the Puppeteer test
+# After pcap setup, begin the Ookla test
+# Set up command to run the ookla-test.js - need to pass command line arguments into the node script
 JS_COMMAND="node $SCRIPT_DIR/ookla-test.js"
 JS_COMMAND="$JS_COMMAND -s \"$SERVER\""
 JS_COMMAND="$JS_COMMAND -c \"$CONNECTION\""
 JS_COMMAND="$JS_COMMAND -o \"$OUTPUT_DIR\""
 
-# Fix any permission issues in the output directory
-# if [ -d "$OUTPUT_DIR" ]; then
-#     sudo chown -R $(whoami):$(whoami) "$OUTPUT_DIR"
-#     chmod -R 777 "$OUTPUT_DIR"
-# fi
-
-# Run the Puppeteer test
-echo "Launching speed test..."
+#run the Ookla test
 echo "Executing: $JS_COMMAND"
 eval "$JS_COMMAND"
 TEST_EXIT_CODE=$?
@@ -187,21 +179,8 @@ TEST_EXIT_CODE=$?
 if [ "$PCAP_FLAG" = true ]; then
     echo "Stopping packet capture..."
     if ps -p $TSHARK_PID > /dev/null; then
-        # First try normal kill
         kill $TSHARK_PID 2>/dev/null
         sleep 1
-
-        # # If still running, try sudo kill
-        # if ps -p $TSHARK_PID > /dev/null; then
-        #     sudo kill $TSHARK_PID 2>/dev/null
-        #     sleep 1
-
-        #     # If STILL running, use SIGKILL
-        #     if ps -p $TSHARK_PID > /dev/null; then
-        #         sudo kill -9 $TSHARK_PID 2>/dev/null
-        #     fi
-        # fi
-
         echo "Packet capture completed."
 
         # Ensure the pcap file is accessible
@@ -218,19 +197,10 @@ if [ "$PCAP_FLAG" = true ]; then
     fi
 fi
 
-# Create metadata.json file with test information
-echo "{
-  \"server\": \"$SERVER\",
-  \"connection\": \"$CONNECTION\",
-  \"date\": \"$(date '+%Y-%m-%d')\",
-  \"time\": \"$(date '%H:%M:%S')\"
-}" > "$OUTPUT_DIR/metadata.json"
-
 echo "---------------------------------------------"
 echo "Test completed with exit code: $TEST_EXIT_CODE"
 echo "Results saved to: $OUTPUT_DIR"
 echo "---------------------------------------------"
-# Output the directory path in a standardized format for automated processing
 echo "OUTPUT_DIR=$OUTPUT_DIR"
 
 exit $TEST_EXIT_CODE
