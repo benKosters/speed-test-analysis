@@ -1,17 +1,19 @@
 .DS_Store
 .git/
 node_modules/
-
-streamlit-app/
-data-analysis/socket_level_throughput.py
-
-#these files are not ready yet, but will be added soon
-latency/
-output/
+ookla/test-execution/.env
 
 # Ignore all contents of the ookla-test-results directory
 ookla/test-execution/ookla-test-results/*
 # Keep the ookla-test-results directory itself
 !ookla/test-execution/ookla-test-results/.gitkeep
+
+
+# these files arent ready to be tracked yet
+streamlit-app/
+data-analysis/socket_level_throughput.py
+latency/
+output/
+
 
 **/output/

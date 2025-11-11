@@ -69,35 +69,70 @@ if ! command -v aws >/dev/null 2>&1; then
 fi
 
 # Function to compress and upload batch
+# upload_batch() {
+#     local batch_num=$1
+#     echo "[$(date)] Starting upload process for batch $batch_num" | tee -a "$LOG_FILE"
+
+#     local timestamp=$(date +"%Y%m%d_%H%M%S")
+#     local archive_name="ookla_tests_batch${batch_num}_${timestamp}.tar.gz"
+#     local archive_path="$BASE_DIR/$archive_name"
+
+#     echo "[$(date)] Compressing test results." | tee -a "$LOG_FILE"
+#     if tar -czf "$archive_path" -C "$BASE_DIR" ookla-test-results/ 2>> "$LOG_FILE"; then
+#         echo "[$(date)] Compression successful: $(du -h "$archive_path" | cut -f1)" | tee -a "$LOG_FILE"
+#     else
+#         echo "[$(date)] Error: Compression failed" | tee -a "$LOG_FILE"
+#         return 1
+#     fi
+
+#     # Upload to S3
+#     echo "[$(date)] Uploading to S3 bucket: $S3_BUCKET_NAME" | tee -a "$LOG_FILE"
+#     if aws s3 cp "$archive_path" "s3://$S3_BUCKET_NAME/" 2>> "$LOG_FILE"; then
+#         echo "[$(date)] Upload successful" | tee -a "$LOG_FILE"
+
+#         # Verify upload
+#         if aws s3 ls "s3://$S3_BUCKET_NAME/$archive_name" >/dev/null 2>&1; then
+#             echo "[$(date)] Upload verified in S3" | tee -a "$LOG_FILE"
+
+#             # Clean up local files
+#             echo "[$(date)] Removing local test files" | tee -a "$LOG_FILE"
+#             rm -rf "$RESULTS_DIR"/*
+#             rm -f "$archive_path"
+#             echo "[$(date)] Local cleanup complete" | tee -a "$LOG_FILE"
+
+#             echo "[$(date)] Waiting $WAIT_TIME seconds before continuing." | tee -a "$LOG_FILE"
+#             sleep $WAIT_TIME
+
+#             return 0
+#         else
+#             echo "[$(date)] Error: Could not verify upload in S3" | tee -a "$LOG_FILE"
+#             return 1
+#         fi
+#     else
+#         echo "[$(date)] Error: Upload to S3 failed" | tee -a "$LOG_FILE"
+#         return 1
+#     fi
+# }
+# Replace the upload_batch() function with this:
 upload_batch() {
     local batch_num=$1
     echo "[$(date)] Starting upload process for batch $batch_num" | tee -a "$LOG_FILE"
 
     local timestamp=$(date +"%Y%m%d_%H%M%S")
-    local archive_name="ookla_tests_batch${batch_num}_${timestamp}.tar.gz"
-    local archive_path="$BASE_DIR/$archive_name"
+    local s3_prefix="ookla_tests_batch${batch_num}_${timestamp}"
 
-    echo "[$(date)] Compressing test results." | tee -a "$LOG_FILE"
-    if tar -czf "$archive_path" -C "$BASE_DIR" ookla-test-results/ 2>> "$LOG_FILE"; then
-        echo "[$(date)] Compression successful: $(du -h "$archive_path" | cut -f1)" | tee -a "$LOG_FILE"
-    else
-        echo "[$(date)] Error: Compression failed" | tee -a "$LOG_FILE"
-        return 1
-    fi
+    # Upload the entire ookla-test-results directory to S3 with batch prefix
+    if aws s3 sync "$RESULTS_DIR/" "s3://$S3_BUCKET_NAME/$s3_prefix/" --delete 2>> "$LOG_FILE"; then
+        echo "[$(date)] Upload successful to s3://$S3_BUCKET_NAME/$s3_prefix/" | tee -a "$LOG_FILE"
 
-    # Upload to S3
-    echo "[$(date)] Uploading to S3 bucket: $S3_BUCKET_NAME" | tee -a "$LOG_FILE"
-    if aws s3 cp "$archive_path" "s3://$S3_BUCKET_NAME/" 2>> "$LOG_FILE"; then
-        echo "[$(date)] Upload successful" | tee -a "$LOG_FILE"
-
-        # Verify upload
-        if aws s3 ls "s3://$S3_BUCKET_NAME/$archive_name" >/dev/null 2>&1; then
-            echo "[$(date)] Upload verified in S3" | tee -a "$LOG_FILE"
+        # Verify upload by listing the S3 directory
+        local file_count=$(aws s3 ls "s3://$S3_BUCKET_NAME/$s3_prefix/" --recursive | wc -l)
+        if [ "$file_count" -gt 0 ]; then
+            echo "[$(date)] Upload verified in S3 ($file_count files uploaded)" | tee -a "$LOG_FILE"
 
             # Clean up local files
             echo "[$(date)] Removing local test files" | tee -a "$LOG_FILE"
             rm -rf "$RESULTS_DIR"/*
-            rm -f "$archive_path"
             echo "[$(date)] Local cleanup complete" | tee -a "$LOG_FILE"
 
             echo "[$(date)] Waiting $WAIT_TIME seconds before continuing." | tee -a "$LOG_FILE"
@@ -113,6 +148,7 @@ upload_batch() {
         return 1
     fi
 }
+
 
 # Function to count existing test directories to track batch size
 count_tests() {
