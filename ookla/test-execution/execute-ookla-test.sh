@@ -115,7 +115,7 @@ echo "---------------------------------------------"
 
 # If PCAP is enabled, create the pcap file and begin the dumpcap process
 if [ "$PCAP_FLAG" = true ]; then
-    PCAP_FILE="$OUTPUT_DIR/tcp_capture.pcap"
+    PCAP_FILE="$OUTPUT_DIR/tcp_capture$OUTPUT_DIR.pcap"
 
     # Create output directory with proper permissions
     mkdir -p "$OUTPUT_DIR"

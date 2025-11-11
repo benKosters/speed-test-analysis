@@ -114,12 +114,53 @@ fi
 #     fi
 # }
 # Replace the upload_batch() function with this:
+# Replace the upload_batch() function with this:
 upload_batch() {
     local batch_num=$1
     echo "[$(date)] Starting upload process for batch $batch_num" | tee -a "$LOG_FILE"
 
-    local timestamp=$(date +"%Y%m%d_%H%M%S")
+    local timestamp=$(date +"%Y-%m-%d_%H%M")
     local s3_prefix="ookla_tests_batch${batch_num}_${timestamp}"
+
+    echo "[$(date)] Compressing PCAP files for optimal upload (using gzip -9)..." | tee -a "$LOG_FILE"
+
+    # Find and compress all .pcap files in the results directory
+    local pcap_count=0
+    local compressed_size=0
+    local original_size=0
+
+    while IFS= read -r -d '' pcap_file; do
+        if [ -f "$pcap_file" ]; then
+            local original_file_size=$(stat -c%s "$pcap_file")
+            original_size=$((original_size + original_file_size))
+
+            echo "[$(date)] Compressing $(basename "$pcap_file") with gzip -9" | tee -a "$LOG_FILE"
+
+            # Compress the pcap file with gzip -9 (maximum compression)
+            if gzip -9 "$pcap_file" 2>> "$LOG_FILE"; then
+                local compressed_file_size=$(stat -c%s "${pcap_file}.gz")
+                compressed_size=$((compressed_size + compressed_file_size))
+                pcap_count=$((pcap_count + 1))
+
+                local compression_ratio=$(echo "scale=1; $compressed_file_size * 100 / $original_file_size" | bc 2>/dev/null || echo "N/A")
+                echo "[$(date)] Compressed $(basename "$pcap_file"): $(numfmt --to=iec $original_file_size) → $(numfmt --to=iec $compressed_file_size) (${compression_ratio}%)" | tee -a "$LOG_FILE"
+            else
+                echo "[$(date)] Warning: Failed to compress $(basename "$pcap_file")" | tee -a "$LOG_FILE"
+            fi
+        fi
+    done < <(find "$RESULTS_DIR" -name "*.pcap" -print0)
+
+    if [ $pcap_count -gt 0 ]; then
+        local total_savings=$(echo "scale=1; ($original_size - $compressed_size) * 100 / $original_size" | bc 2>/dev/null || echo "N/A")
+        echo "[$(date)] PCAP compression complete: $pcap_count files, ${total_savings}% size reduction" | tee -a "$LOG_FILE"
+        echo "[$(date)] Original size: $(numfmt --to=iec $original_size)" | tee -a "$LOG_FILE"
+        echo "[$(date)] Compressed size: $(numfmt --to=iec $compressed_size)" | tee -a "$LOG_FILE"
+        echo "[$(date)] Space saved: $(numfmt --to=iec $((original_size - compressed_size)))" | tee -a "$LOG_FILE"
+    else
+        echo "[$(date)] No PCAP files found to compress" | tee -a "$LOG_FILE"
+    fi
+
+    echo "[$(date)] Uploading test results to S3 (PCAP files compressed with gzip -6, others raw)..." | tee -a "$LOG_FILE"
 
     # Upload the entire ookla-test-results directory to S3 with batch prefix
     if aws s3 sync "$RESULTS_DIR/" "s3://$S3_BUCKET_NAME/$s3_prefix/" --delete 2>> "$LOG_FILE"; then
