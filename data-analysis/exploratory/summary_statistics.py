@@ -46,6 +46,15 @@ Given the byte_count dictionary, thie function will loop through each entry in t
 that have the same number of flows contributing to the bytecount.
 For example, we can see that 'x' number of events have 1 flow conributing, 'y' events have 2 flows contributing, etc.
 """
+def find_test_duration(data):
+    first_timestamp = int(data[0]['progress'][0]['time'])
+    last_timestamp = int(data[-1]['progress'][-1]['time'])
+
+    duration_ms = last_timestamp - first_timestamp
+    #duration_seconds = duration_ms / 1000.0
+
+    return duration_ms
+
 def calculate_occurrence_sums(byte_count):
     occurrence_sums = {}
     for timestamp in byte_count:
@@ -161,7 +170,8 @@ def save_socket_stream_data(byte_list, source_times, outputDir, print_output = F
         "http_stream_data": [],
         "socket_data": [],
         "stream_statistics": [],
-        "socket_statistics": []
+        "socket_statistics": [],
+        "test_data": []
     }
     #Capture statistic
     http_stream_data, socket_to_streams = capture_http_stream_statistics(byte_list, source_times, print_output)
@@ -203,6 +213,10 @@ def save_socket_stream_data(byte_list, source_times, outputDir, print_output = F
             "max_latency_between_streams_ms": max_latency,
             "range_latency_between_streams_ms": range_latency
         }
+
+        # find the test duration
+        test_duration_ms = find_test_duration(byte_list)
+        http_stream_data_structure["test_data"] = {"test_duration_ms": test_duration_ms}
 
         # Add to the data structure
         http_stream_data_structure["socket_statistics"] = socket_statistics

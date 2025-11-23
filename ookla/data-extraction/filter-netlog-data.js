@@ -24,7 +24,7 @@
 //Import the filesystem and path modules
 const fs = require('fs');
 const path = require('path');
-const { checkFilePath, readFileSync, writeFileSync, deleteFile, parseJSONFromFile } = require('./file-utils');
+const { checkFilePath, readFileSync, writeFileSync, deleteFile, parseJSONFromFile, mapEventNamesToIds } = require('./file-utils');
 const logEvent_ids = {}; //maps Netlog event names to a number (their IDs) - these IDs change for each test, but the names remain the same
 
 // Check if file paths were provided
@@ -84,14 +84,6 @@ const splitTestTypeUrls = (urlJSON) => {
     console.log("Example loaded split URL:", split_loaded_urls[0]);
     console.log("Example unloaded split URL:", split_unloaded_urls[0])
     return { split_urls: split_urls, split_unloaded_urls: split_unloaded_urls, split_loaded_urls: split_loaded_urls };
-};
-
-const mapEventNamesToIds = (logEventTypes, targetMap) => {
-    //Store event names and IDs, as the IDs change for every test
-    Object.entries(logEventTypes).forEach(([name, id]) => {
-        targetMap[name] = id;
-    });
-    console.log("Number of event types:", Object.keys(targetMap).length);
 };
 
 const captureThroughputData = (eventData, results, byte_time_list, current_position_list, testType, logEvent_ids) => {
@@ -503,7 +495,7 @@ const processSocketIds = () => {
 
 const processByteCounts = () => {
     /**
-     * Using the socket ID, sum the bytecounts at the socket level.
+     * Collect byte counts at the socket level (layer 4 in TCP/IP model)
      */
     const absoluteUrlPath = path.resolve(urlPath);
     const uploadDir = path.dirname(absoluteUrlPath);

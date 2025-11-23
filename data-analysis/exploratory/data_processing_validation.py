@@ -55,8 +55,12 @@ def byte_count_validation(byte_list, byte_count):
     print(f"{'Duration of byte_count timestamps:':<30} | {count_duration_sec:<20.3f}")
 
     print(f"{'Difference between total bytes and processed bytes':<30} | {total_raw_bytes - total_processed_bytes:<20}")
-    print(f"Percentage difference raw bytes vs unique timestamp bytes: {((total_raw_bytes - total_processed_bytes) / total_raw_bytes) * 100:.2f}%")
+
+    percent_loss = ((total_raw_bytes - total_processed_bytes) / total_raw_bytes) * 100 if total_raw_bytes > 0 else 0
+    print(f"Percentage difference raw bytes vs unique timestamp bytes: {percent_loss:.2f}%")
     print("-" * 55)
+
+    return total_raw_bytes, total_processed_bytes, list_duration_sec, count_duration_sec, percent_loss
 
 #Convert the timestamps in byte_count to seconds - #FIXME: confirm that the first timestamp matches the first timestamp in aggregated_time
 def normalize_byte_count(byte_count, output_file_path=None):
@@ -284,3 +288,5 @@ def throughput_mean_median_range(throughput_results):
     print(f"Minimum Throughput: {min_throughput:.2f} Mbps")
     print(f"Maximum Throughput: {max_throughput:.2f} Mbps")
     print(f"Throughput Range:   {throughput_range:.2f} Mbps")
+
+    return num_points, mean_throughput, median_throughput, min_throughput, max_throughput, throughput_range

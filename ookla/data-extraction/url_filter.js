@@ -15,8 +15,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { checkFilePath, readFileSync, ensureDirectoryExists, fixAndParseJSON } = require('./file-utils');
+const { checkFilePath, readFileSync, ensureDirectoryExists, fixAndParseJSON, mapEventNamesToIds } = require('./file-utils');
 const { url } = require('inspector');
+const { type } = require('os');
 
 
 // Helper function to check if a URL has already been picked up
@@ -30,14 +31,23 @@ function collectUrlsFromNetlog(filePath) {
         const result = fixAndParseJSON(data, filePath);
         console.log("JSON parsed successfully.");
 
-        // Extract only the events array
         const events = result.events;
+        const event_ids = {};
+
+        console.log(typeof (result.constants.logEventTypes));
+        mapEventNamesToIds(result.constants.logEventTypes, event_ids);
+        console.log(event_ids["REQUEST_ALIVE"]);
+
 
         url_list = {
             "download": [],
             "upload": [],
-            "hello": []
+            "hello": [],
+            "ws": []
         }
+
+        let ws_sessions = {};
+        let ws_source_ids = [];
 
         // Process each event to collect URLs
         events.forEach((eventData, index) => {
@@ -45,12 +55,78 @@ function collectUrlsFromNetlog(filePath) {
                 const DOWNLOAD_PATTERN = '8080/download?nocache=';
                 const UPLOAD_PATTERN = '8080/upload?nocache=';
                 const HELLO_PATTERN = '8080/hello?nocache=';
+                const WS_PATTERN = '/ws?';
+
+                // Declare these variables at the beginning of the loop
+                const sourceId = eventData.source.id;
+                const eventType = eventData.type;
+
+                //Look for WS events:
+                if (eventData.hasOwnProperty('params') &&
+                    typeof (eventData.params) === 'object' &&
+                    eventData.params.hasOwnProperty('url') &&
+                    eventData.params.url.includes(WS_PATTERN) &&
+                    eventData.type === event_ids['URL_REQUEST']) {
+
+                    ws_sessions[sourceId] = {
+                        url: eventData.params.url,
+                        sourceId: sourceId,
+                        initialRequestTime: eventData.time,
+                        startTime: null,
+                        endTime: null,
+                        duration: null
+                    };
+                    ws_source_ids.push(sourceId);
+                    console.log("Found WebSocket URL:", eventData.params.url, "Source ID:", sourceId);
+                }
+
+                // Check for WebSocket start event (HTTP 101 Switching Protocols)
+                if (ws_source_ids.includes(sourceId) &&
+                    eventType === event_ids["HTTP_TRANSACTION_READ_RESPONSE_HEADERS"] &&
+                    eventData.hasOwnProperty('params') &&
+                    eventData.params.hasOwnProperty('headers')) {
+
+                    // Check if headers indicate WebSocket upgrade
+                    const headers = Array.isArray(eventData.params.headers) ?
+                        eventData.params.headers.join(' ') :
+                        JSON.stringify(eventData.params.headers);
+
+                    if (headers.includes("101 Switching Protocols") &&
+                        headers.includes("websocket")) {
+
+                        if (ws_sessions[sourceId]) {
+                            ws_sessions[sourceId].startTime = eventData.time;
+                            console.log("WebSocket start event found for source ID:", sourceId, "at time:", eventData.time);
+                        }
+                    }
+                }
+
+                // Check for WebSocket end event (WEBSOCKET_RECV_FRAME_HEADER with specific opcode)
+                if (ws_source_ids.includes(sourceId) &&
+                    eventType === event_ids["WEBSOCKET_RECV_FRAME_HEADER"] &&
+                    eventData.hasOwnProperty('params') &&
+                    eventData.params.hasOwnProperty('opcode')) {
+
+                    // Look for close frame (opcode 8) or other specific opcodes that indicate end
+                    if (eventData.params.opcode === 8) { // Close frame
+                        if (ws_sessions[sourceId]) {
+                            ws_sessions[sourceId].endTime = eventData.time;
+
+                            // Calculate duration if we have both start and end times
+                            if (ws_sessions[sourceId].startTime) {
+                                ws_sessions[sourceId].duration =
+                                    parseInt(ws_sessions[sourceId].endTime) -
+                                    parseInt(ws_sessions[sourceId].startTime);
+                            }
+                            console.log("WebSocket end event found for source ID:", sourceId, "at time:", eventData.time);
+                        }
+                    }
+                }
 
                 if (eventData.hasOwnProperty('params') &&
                     typeof (eventData.params) === 'object' &&
                     eventData.params.hasOwnProperty('url')) {
 
-                    const sourceId = eventData.source.id;
 
                     //check for download URLs
                     if (eventData.params.url.includes(DOWNLOAD_PATTERN)) {
@@ -84,7 +160,6 @@ function collectUrlsFromNetlog(filePath) {
                     }
 
                 }
-                return url_list;
 
             } catch (error) {
                 console.error('Error processing event at index:', index);
@@ -92,9 +167,22 @@ function collectUrlsFromNetlog(filePath) {
             }
         });
 
+        // Convert WebSocket sessions to array format and add to url_list
+        url_list.ws = Object.values(ws_sessions);
+
+        // Log summary of WebSocket sessions found
+        console.log("WebSocket sessions found:", url_list.ws.length);
+        url_list.ws.forEach((session, index) => {
+            console.log(`WS ${index + 1}: URL: ${session.url}`);
+            console.log(`  Source ID: ${session.sourceId}`);
+            console.log(`  Start Time: ${session.startTime || 'Not found'}`);
+            console.log(`  End Time: ${session.endTime || 'Not found'}`);
+            console.log(`  Duration: ${session.duration || 'Cannot calculate'} ms`);
+        });
+
     } catch (error) {
-        console.error('Error reading or processing file:', error.message); // Log the error message
-        console.error('Stack trace:', error.stack); // Log the stack trace for debugging
+        console.error('Error reading or processing file:', error.message);
+        console.error('Stack trace:', error.stack);
         process.exit(1);
     }
     return url_list;

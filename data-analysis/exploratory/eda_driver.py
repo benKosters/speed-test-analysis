@@ -61,6 +61,9 @@ print(f"Latency File: {latency_file}")
 print(f"Loaded Latency File: {loaded_latency_file}")
 print()
 
+#Store information about the test, to be saved as JSON file
+test_data = {}
+
 # Check and load files
 files_to_check = [byte_file, current_file, loaded_latency_file]
 if os.path.exists(latency_file):
@@ -92,7 +95,6 @@ byte_list, test_type = tp_proc.normalize_test_data(byte_file, current_file, late
 normalized_byte_list_file = os.path.abspath(os.path.join(args.base_path, "normalized_byte_list.json"))
 
 print(f"Byte List Length: {len(byte_list)}")
-print()
 
 #----------------------Step 2: Aggregating timestamps----------------------------------------------
 """
@@ -102,6 +104,7 @@ the intervals of time that byte counts were being sent over.
 aggregated_time, source_times, begin_time = tp_proc.aggregate_timestamps_and_find_stream_durations(byte_list, socket_file)
 old = -1
 
+test_data["count_of_aggregated_timestamps"] = len(aggregated_time)
 
 for x in aggregated_time:
     if x == old:
@@ -130,17 +133,32 @@ else:
         json.dump(byte_count, f, indent=4)
 
 #Print some stats about the byte_count
-validate.byte_count_validation(byte_list, byte_count)
+total_raw_bytes, total_processed_bytes, list_duration_sec, count_duration_sec, percent_loss = validate.byte_count_validation(byte_list, byte_count)
+test_data["total_raw_bytes"] = total_raw_bytes
+test_data["total_processed_bytes"] = total_processed_bytes
+test_data["list_duration_sec"] = list_duration_sec
+test_data["count_duration_sec"] = count_duration_sec
+test_data["percent_byte_loss"] = percent_loss
 
 
 # ----------------------------------Step 4: Throughput Calculation---------------------------------------------
 throughput_results = []
 num_flows = max(byte_count[timestamp][1] for timestamp in byte_count) #find the max number of flows - there should never be MORE than the defined number of flows contributing to a bytecount
 print("max number of flows:", num_flows)
-ss.calculate_percent_of_all_flows_contributing(byte_count, num_flows)
+test_data["num_sockets"] = num_flows
+
+formated_flows, max_flow_percentage = ss.calculate_percent_of_all_flows_contributing(byte_count, num_flows)
+
+test_data["formatted_flows"] = formated_flows
+test_data["max_flow_percentage"] = max_flow_percentage
 
 # For a full slate of tests for presenting the final product, calculate throughput for 2 and 10 second intervals with max flow ONLY
-throughput_results_2ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 1, begin_time)
+throughput_results_2ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 2, begin_time)
+
+# print("Throughput results 2ms:")
+# for i in range(10):
+#     print(throughput_results_2ms[i])
+
 throughput_results_50ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 50, begin_time)
 
 #throughput grouped by number of flows contributing - used to show there is still a throughput even though not all flows are contributing
@@ -156,14 +174,32 @@ for flow_count in range(1, num_flows + 1):
 # print("Number of througput points for 2ms:", len(throughput_results_2ms))
 validate.analyze_throughput_intervals(throughput_results_2ms)
 
-print("stats for 2ms interval")
-validate.throughput_mean_median_range(throughput_results_2ms)
+print("Statistics for the throughput calculated over 2ms intervals")
+num_points, mean_throughput, median_throughput, min_throughput, max_throughput, throughput_range = validate.throughput_mean_median_range(throughput_results_2ms)
+test_data["throughput_2ms"] = {
+    "num_points": num_points,
+    "mean_throughput_mbps": mean_throughput,
+    "median_throughput_mbps": median_throughput,
+    "min_throughput_mbps": min_throughput,
+    "max_throughput_mbps": max_throughput,
+    "throughput_range_mbps": throughput_range
+}
 
-print("stats for 50ms interval")
-validate.throughput_mean_median_range(throughput_results_50ms)
+# print("stats for 50ms interval")
+# num_points_50ms, mean_throughput_50ms, median_throughput_50ms, min_throughput_50ms, max_throughput_50ms, throughput_range_50ms = validate.throughput_mean_median_range(throughput_results_50ms)
+# test_data["throughput_50ms"] = {
+#     "num_points": num_points_50ms,
+#     "mean_throughput_mbps": mean_throughput_50ms,
+#     "median_throughput_mbps": median_throughput_50ms,
+#     "min_throughput_mbps": min_throughput_50ms,
+#     "max_throughput_mbps": max_throughput_50ms,
+#     "throughput_range_mbps": throughput_range_50ms
+# }
 
 #print out the number of flows contributing to a byte count, and the frequency that they occur.
 #ss.calculate_occurrence_sums(byte_count)
+test_data_file = os.path.abspath(os.path.join(args.base_path, "test_data_summary.json"))
+utilities.save_json(test_data, test_data_file)
 
 #---------------------------------------------Plotting-------------------------------------------------
 test_title = "Spacelink Single Flow, Test 1"
@@ -176,8 +212,8 @@ df_10ms = pd.DataFrame(throughput_results_50ms) # df for throughput
 #plot.plot_throughput_and_http_streams(df_10ms, title=f"{test_title} 10ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
 
 #2 and 3) plot throughput with all points classified by how many flows are contributing (2ms and 10ms bin sizes)
-tp_plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 2ms Interval",scatter= False, save =args.save, base_path = args.base_path)
-tp_plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_50ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 10ms Interval",save =args.save, base_path = args.base_path)
+tp_plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=None,scatter= True, save =args.save, base_path = args.base_path)
+#tp_plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_50ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 10ms Interval",save =args.save, base_path = args.base_path)
 
 # # # 4 and 5) plot throughput for all flows, with scatter plot overlay
 #plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 2ms Interval",scatter= True, save =args.save, base_path = args.base_path)
@@ -200,80 +236,3 @@ elif test_type == "download":
     # Plot aggregated bytecounts for download
     #plot.plot_aggregated_bytecount(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
     #plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
-
-
-#------------------Step 5: Plotting Latency-------------------------------------------------
-
-# Load and plot latency data - only if files exist
-# latency_data_available = os.path.exists(latency_file) or os.path.exists(loaded_latency_file)
-
-# if latency_data_available:
-#     idle_latencies = []
-#     loaded_latencies = []
-
-#     # Load idle latency if available (from latency.json which now contains idle/unload latency)
-#     if os.path.exists(latency_file):
-#         with open(latency_file, 'r') as f:
-#             idle_latency = json.load(f)
-#         idle_latencies = tp.extract_latencies(idle_latency)
-#         print("Idle Latency Values:", idle_latencies)
-#     else:
-#         print("No idle latency file found - skipping idle latency plotting")
-
-#     # Load loaded latency if available
-#     if os.path.exists(loaded_latency_file):
-#         with open(loaded_latency_file, 'r') as f:
-#             loaded_latency = json.load(f)
-#         loaded_latencies = tp.extract_latencies(loaded_latency)
-#         print("Loaded Latency Values:", loaded_latencies)
-#     else:
-#         print("No loaded latency file found - skipping loaded latency plotting")
-
-#     # Plot latencies if we have any data
-#     if idle_latencies or loaded_latencies:
-#         plt.figure(figsize=(10,5))
-
-#         if idle_latencies:
-#             plt.scatter(range(len(idle_latencies)), idle_latencies, label='Idle Latency', alpha=0.7, color='blue')
-
-#         if loaded_latencies:
-#             plt.scatter(range(len(loaded_latencies)), loaded_latencies, label='Loaded Latency', alpha=0.7, color='red')
-
-#         plt.xlabel('Stream Index')
-#         plt.ylabel('Latency (ms)')
-#         plt.title('Idle vs Loaded Latency Comparison')
-#         plt.legend()
-#         if args.save:
-#             plt.savefig(os.path.join(args.base_path, "plot_images", "latency_scatter.png"))
-#         plt.show()
-
-#         # Plot histogram
-#         plt.figure(figsize=(10,5))
-#         if idle_latencies:
-#             plt.hist(idle_latencies, bins=20, alpha=0.7, label='Idle Latency', color='blue')
-#         if loaded_latencies:
-#             plt.hist(loaded_latencies, bins=20, alpha=0.7, label='Loaded Latency', color='red')
-#         plt.xlabel('Latency (ms)')
-#         plt.ylabel('Frequency')
-#         plt.title('Latency Distribution: Idle vs Loaded')
-#         plt.legend()
-#         if args.save:
-#             plt.savefig(os.path.join(args.base_path, "plot_images", "latency_histogram.png"))
-#         plt.show()
-
-#         # Calculate and display latency comparison metrics
-#         if idle_latencies and loaded_latencies:
-#             idle_mean = sum(idle_latencies) / len(idle_latencies)
-#             loaded_mean = sum(loaded_latencies) / len(loaded_latencies)
-#             latency_increase = loaded_mean - idle_mean
-#             latency_increase_percent = (latency_increase / idle_mean) * 100 if idle_mean > 0 else 0
-
-#             print(f"--------- LATENCY ANALYSIS ---------")
-#             print(f"Mean Idle Latency: {idle_mean:.2f}ms")
-#             print(f"Mean Loaded Latency: {loaded_mean:.2f}ms")
-#             print(f"Latency Increase: {latency_increase:.2f}ms ({latency_increase_percent:.1f}%)")
-
-#     else:
-#         print("No latency data available for plotting")
-# else:
-#     print("No latency files found - skipping latency plotting section")

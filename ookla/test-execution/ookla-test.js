@@ -171,7 +171,7 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
     console.log("Test is complete!");
 
     // Ensure the browser is closed gracefully to finalize netlog capture
-    console.log("Closing browser to finalize netlog capture...");
+    console.log("Closing browser to finalize netlog capture");
     await browser.close();
     console.log("Browser closed. Netlog capture should now be finalized.");
 })();

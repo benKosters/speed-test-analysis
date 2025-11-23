@@ -112,6 +112,14 @@ function fixAndParseJSON(jsonString, originalFilePath) {
     }
 }
 
+const mapEventNamesToIds = (logEventTypes, targetMap) => {
+    //Store event names and IDs, as the IDs change for every test
+    Object.entries(logEventTypes).forEach(([name, id]) => {
+        targetMap[name] = id;
+    });
+    console.log("Number of event types:", Object.keys(targetMap).length);
+};
+
 
 module.exports = {
     checkFilePath,
@@ -119,5 +127,6 @@ module.exports = {
     ensureDirectoryExists,
     writeFileSync,
     parseJSONFromFile,
-    fixAndParseJSON
+    fixAndParseJSON,
+    mapEventNamesToIds
 };

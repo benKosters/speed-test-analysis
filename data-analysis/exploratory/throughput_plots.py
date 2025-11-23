@@ -36,7 +36,7 @@ def plot_throughput_and_http_streams(df, title=None, source_times=None, begin_ti
         ax1.set_ylabel('Throughput (in Mbps)')
 
         ax1.legend()
-        ax1.set_ylim(0, 1000) #set y-axis for consistency
+        ax1.set_ylim(0, 1500) #set y-axis for consistency
 
         # Create color map for unique socket IDs
         unique_sockets = set(info['socket'] for info in source_times.values() if info['socket'] is not None)
@@ -388,12 +388,12 @@ def plot_throughput_rema_separated_by_flows(throughput_list_dict, start_time, en
     # Add labels, title, and legend
     ax1.set_xlabel('Time (in seconds)')
     ax1.set_ylabel('Throughput (in Mbps)')
-    ax1.set_ylim(0, 1000)
+    ax1.set_ylim(0, 2000)
 
-    # if title:
-    #     ax1.set_title(title)
-    # else:
-    #     ax1.set_title(f"Throughput REMA with Flow Count Coloring ({start_time}s to {end_time}s)")
+    if title:
+        ax1.set_title(title)
+    else:
+        ax1.set_title("HTTP Level Throughput, Grouped by Number of Concurrent Flows")
 
     # Create a custom legend for flow counts
     handles = []
