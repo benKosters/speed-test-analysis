@@ -5,9 +5,10 @@
 2) plot_throughput_scatter_max_flows_only: Plots the throughput data with a scatter plot overlay, but only for points where num_flows are contributing to the bytecount
 3) plot_throughput_scatter_max_and_one_fewer_flows: Plots the throughput data with a scatter plot overlay, but only for points where num_flows and num_flows - 1 are contributing to the bytecount
 4) plot_throughput_rema_separated_by_flows: Plots the throughput data with a scatter plot overlay, classified by the number of flows contributing(ALL flows represented)
+5) plot_throughput_rema_separated_by_flows_socket_grouped: Same as #4, but Gantt chart groups streams by socket instead of showing each stream individually
 
-5) plot_rema_per_http_stream: Plots the REMA lines for each HTTP stream, useful for visualizing spikes in the bytecount
-6) plot_aggregated_bytecount: Plots only the aggregated bytecounts across all HTTP streams for a clean view of total system throughput
+6) plot_rema_per_http_stream: Plots the REMA lines for each HTTP stream, useful for visualizing spikes in the bytecount
+7) plot_aggregated_bytecount: Plots only the aggregated bytecounts across all HTTP streams for a clean view of total system throughput
 
 """
 
@@ -325,14 +326,14 @@ Has the option to add a scatter plot overlay. These points are also classified b
 def plot_throughput_rema_separated_by_flows(throughput_list_dict, start_time, end_time, source_times, begin_time, title=None, scatter=False, save=False, base_path=None):
 
     fig, (ax1, ax2) = plt.subplots(2, 1, height_ratios=[3, 1], figsize=(10, 8))
-    # Define colors for different flow counts
+    # Define colors for different flow counts (cool to warm: fewer to more flows)
     flow_colors = {
-        1: 'purple',
-        2: 'blue',
-        3: 'green',
-        4: 'orange',
-        5: 'red',
-        6: 'brown'
+        1: 'Blue',
+        2: 'DeepSkyBlue',
+        3: 'Green',
+        4: 'Gold',
+        5: 'DarkOrange',
+        6: 'Red'
     }
 
     # Create a combined DataFrame with a 'flow_count' column
@@ -388,7 +389,7 @@ def plot_throughput_rema_separated_by_flows(throughput_list_dict, start_time, en
     # Add labels, title, and legend
     ax1.set_xlabel('Time (in seconds)')
     ax1.set_ylabel('Throughput (in Mbps)')
-    ax1.set_ylim(0, 2000)
+    ax1.set_ylim(0, 3250)
 
     if title:
         ax1.set_title(title)
@@ -457,6 +458,155 @@ def plot_throughput_rema_separated_by_flows(throughput_list_dict, start_time, en
         filename = "throughput_rema_separated_by_flows.png"
         plotting_utilities.save_figure(fig, base_path, filename)
     plt.show()
+
+
+"""
+Similar to plot_throughput_rema_separated_by_flows(), but the Gantt chart groups HTTP streams by socket.
+Each socket gets one row, and all streams using that socket are shown on that row.
+"""
+def plot_throughput_rema_separated_by_flows_socket_grouped(throughput_list_dict, start_time, end_time, source_times, begin_time, title=None, scatter=False, save=False, base_path=None):
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, height_ratios=[3, 1], figsize=(10, 8))
+    # Define colors for different flow counts
+    flow_colors = {
+        1: 'Blue',
+        2: 'DeepSkyBlue',
+        3: 'Green',
+        4: 'Gold',
+        5: 'DarkOrange',
+        6: 'Red'
+    }
+
+
+    # Create a combined DataFrame with a 'flow_count' column
+    combined_data = []
+    for flow_count, throughput_list in throughput_list_dict.items():
+        for entry in throughput_list:
+            if start_time <= entry['time'] <= end_time:
+                combined_data.append({
+                    'time': entry['time'],
+                    'throughput': entry['throughput'],
+                    'flow_count': flow_count
+                })
+
+    combined_df = pd.DataFrame(combined_data).sort_values(by='time').reset_index(drop=True)
+
+    combined_df['throughput_ema'] = combined_df['throughput'].ewm(alpha=0.1, adjust=False).mean()
+
+    # -------------------  Throughput Plot with color-coded segments (Top Subplot) -------------------
+    if scatter:
+        for flow_count in sorted(throughput_list_dict.keys()):
+            mask = combined_df['flow_count'] == flow_count
+            if mask.any():  # Only plot if there are points with this flow count
+                ax1.scatter(
+                    combined_df.loc[mask, 'time'],
+                    combined_df.loc[mask, 'throughput'],
+                    color=flow_colors.get(flow_count, 'gray'),
+                    s=5,  # Slightly smaller points to avoid overwhelming the plot
+                    alpha=0.8,  # Slightly transparent
+                    label=f'{flow_count} Flows (data points)'
+                )
+
+    # Plot the REMA line as line segments with different colors
+    for i in range(1, len(combined_df)):
+        flow_count_prev = combined_df.iloc[i-1]['flow_count']
+        flow_count_current = combined_df.iloc[i]['flow_count']
+
+        if flow_count_prev != flow_count_current or i == len(combined_df) - 1:
+            # Find all consecutive points with the same flow count
+            segment_start = i-1
+            while segment_start > 0 and combined_df.iloc[segment_start-1]['flow_count'] == flow_count_prev:
+                segment_start -= 1
+
+            segment = combined_df.iloc[segment_start:i]
+
+            ax1.plot(
+                segment['time'],
+                # segment['throughput_ema'],
+                segment['throughput'],
+                color=flow_colors.get(flow_count_prev, 'gray'),
+                linewidth=1.5,
+                linestyle='--',
+            )
+
+    # Add labels, title, and legend
+    ax1.set_xlabel('Time (in seconds)')
+    ax1.set_ylabel('Throughput (in Mbps)')
+    ax1.set_ylim(0, 3200)
+
+    if title:
+        ax1.set_title(title)
+    else:
+        ax1.set_title("HTTP Level Throughput, Grouped by Number of Concurrent Flows")
+
+    # Create a custom legend for flow counts
+    handles = []
+    labels = []
+    for flow_count in sorted(set(combined_df['flow_count'])):
+        color = flow_colors.get(flow_count, 'gray')
+        handles.append(plt.Line2D([0], [0], color=color, lw=3))
+        labels.append(f'{flow_count} Flows')
+
+    # Place the flow count legend in the upper right
+    ax1.legend(handles=handles, labels=labels, bbox_to_anchor=(1.05, 1), loc='upper left')
+
+    # -------------------  Sockets Gantt Chart (Bottom Subplot) - Grouped by Socket -------------------
+    # Group streams by socket ID
+    socket_groups = {}
+    for stream_id, info in source_times.items():
+        socket_id = info['socket'] if info['socket'] is not None else 'no_socket'
+        if socket_id not in socket_groups:
+            socket_groups[socket_id] = []
+        socket_groups[socket_id].append({
+            'stream_id': stream_id,
+            'start': (info['times'][0] - begin_time) / 1000,
+            'end': (info['times'][1] - begin_time) / 1000
+        })
+
+    # Create color map for unique socket IDs
+    unique_sockets = [s for s in socket_groups.keys() if s != 'no_socket']
+    colors = plt.cm.rainbow(np.linspace(0, 1, len(unique_sockets)))
+    socket_colors = dict(zip(unique_sockets, colors))
+    socket_colors['no_socket'] = 'gray'
+
+    # Plot each socket group on its own row
+    y_offset = 0
+    sorted_sockets = sorted([s for s in socket_groups.keys() if s != 'no_socket']) + (['no_socket'] if 'no_socket' in socket_groups else [])
+
+    for socket_id in sorted_sockets:
+        streams = socket_groups[socket_id]
+        color = socket_colors[socket_id]
+
+        # Plot all streams for this socket on the same row
+        for stream in streams:
+            ax2.hlines(y=y_offset, xmin=stream['start'], xmax=stream['end'],
+                      color=color, linewidth=2)
+
+        y_offset += 1
+
+    ax2.set_xlabel('Time (in seconds)')
+    ax2.set_ylabel('Socket ID')
+    ax2.set_yticks(range(len(sorted_sockets)))
+    ax2.set_yticklabels([f'Socket {s}' if s != 'no_socket' else 'No Socket' for s in sorted_sockets], fontsize=8)
+    ax2.grid(True, axis='y', linestyle='--', alpha=0.3)
+
+    # Create legend for sockets
+    socket_handles = []
+    socket_labels = []
+    for socket_id in sorted_sockets:
+        color = socket_colors[socket_id]
+        socket_handles.append(plt.Line2D([0], [0], color=color, lw=2))
+        socket_labels.append(f'Socket {socket_id}' if socket_id != 'no_socket' else 'No Socket')
+
+    ax1.set_xlim(start_time, end_time)
+    ax2.set_xlim(start_time, end_time)
+
+    plt.tight_layout()
+    if save and base_path:
+        filename = "throughput_rema_separated_by_flows_socket_grouped.png"
+        plotting_utilities.save_figure(fig, base_path, filename)
+    plt.show()
+
 
 """
 Plots only the aggregated bytecounts across all HTTP streams. This gives a clean view of total system throughput.

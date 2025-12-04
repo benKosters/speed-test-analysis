@@ -25,7 +25,7 @@ def normalize_test_data(byte_file, current_file, latency_file):
         current_list = utilities.load_json(current_file)
         print("Length of current position list:", len(current_list))
 
-        # Transform cumulative data into incremental byte data
+        # upload tests record the cumulative byte counts, so convert to incremental byte counts (ex: 16k, 32k and 48k bytes will be reported, but only 16k, 16k, and 16k bytes were actually transferred)
         byte_list = []
         for item in current_list:
             new_progress = []
@@ -50,23 +50,23 @@ def normalize_test_data(byte_file, current_file, latency_file):
             })
     else:  # For download test
         test_type = "download"
-        # Load the latency file only if it exists (unloaded latency is optional)
+        # Load the latency file only if it exists (unloaded latency is optional, but needed to set the start time for the range)
         if os.path.exists(latency_file):
             latency_data = utilities.load_json(latency_file)
             print("Latency loaded")
-            print("Size of latency list:", len(latency_data), "\n")
 
-            # Create a dictionary to map IDs to the first receive time from the latency file
-            latency_time_map = {entry['sourceID']: int(entry['recv_time'][0]) for entry in latency_data
-                       if 'recv_time' in entry and entry['recv_time']}
-            print("Unique source IDs:", len(latency_time_map))
+            # Handle new nested structure or old flat structure
+            if 'test_latency' in latency_data and 'streams' in latency_data['test_latency']:
+                streams = latency_data['test_latency']['streams']
+                print("Size of latency list:", len(streams), "\n")
+                latency_time_map = {stream['id']: int(stream['recv_time']) for stream in streams if 'recv_time' in stream and stream['recv_time'] is not None}
 
             # For every unique source ID, prepend a zero-byte entry with the first receive time
             for entry in byte_list:
                 id = entry['id']
                 progress = entry['progress']
-                # If the ID exists in the latency map, prepend the 0th time entry
-                if id in latency_time_map:
+
+                if id in latency_time_map and latency_time_map[id] is not None:
                     zero_time_entry = {
                         "bytecount": 0,  # Bytecount at recv_time is 0, because no bytes have been received yet
                         "time": latency_time_map[id]
@@ -89,15 +89,6 @@ def aggregate_timestamps_and_find_stream_durations(byte_list, socket_file):
     2. Records the start and end times for each source
     3. Finds the socket each source uses if socket_file is available
 
-    Args:
-        byte_list (list): List of byte transfer entries with progress data
-        socket_file (str): Path to socketIds.txt file
-
-    Returns:
-        tuple: (aggregated_time, source_times, test_type, begin_time)
-            - aggregated_time: List of all unique timestamps from all sources
-            - source_times: Dictionary mapping source IDs to timing and socket info
-            - begin_time: The earliest timestamp in the aggregated data
     """
     aggregated_time = []
     source_times = {}
@@ -111,7 +102,7 @@ def aggregate_timestamps_and_find_stream_durations(byte_list, socket_file):
         if progress:
             source_times[source_id] = {
                 'times': [int(progress[0]['time']), int(progress[-1]['time'])],
-                'socket': None  # Will be populated later
+                'socket': None
             }
 
             # Add  unique timestamps to aggregated_time
@@ -166,30 +157,21 @@ def aggregate_timestamps_and_find_stream_durations(byte_list, socket_file):
 def sum_all_bytecounts_across_http_streams(byte_list, aggregated_time):
 
     """
-    Sum byte counts for all unique timestamps across HTTP streams.
-
-    This improved implementation:
-    1. Properly handles duplicate timestamps within a single stream
-    2. Aggregates bytes from all streams that contribute to each timestamp
-    3. Tracks the number of unique flows contributing at each timestamp
-
-    Args:
-        byte_list (list): List of HTTP stream entries with progress data
-        aggregated_time (list): Sorted list of all unique timestamps
-
-    Returns:
-        dict: Dictionary mapping timestamps to tuples of (bytecount, number_of_flows)
+    Sum byte counts for all unique timestamps across HTTP streams into one list.
+    Each element in the resulting list looks like:
+    timestamp: [total_bytecount, number_of_flows_contributing]
     """
     byte_count = {}
 
-    for timestamp in aggregated_time:
-        byte_count[timestamp] = [0, 0]  # [bytecount, flows] - initialize to zero
+    for timestamp in aggregated_time: # Initialize all bins
+        byte_count[timestamp] = [0, 0]
 
     for entry in byte_list: # For each HTTP stream:
         source_id = entry['id']
         progress = entry['progress']
 
-        stream_bytes = {} # This structure looks like a http stream's progress list, but with the bytecounts of duplicate timestamps summed into one event
+        # Some http streams will have duplicate events with the same timestamp - this step will group them together into one event
+        stream_bytes = {}
         for item in progress:
             timestamp = int(item['time'])
             bytecount = int(item['bytecount'])
@@ -201,16 +183,23 @@ def sum_all_bytecounts_across_http_streams(byte_list, aggregated_time):
 
         # Since the stream_bytes is a dictionary, sort the timestamps
         stream_timestamps = sorted(stream_bytes.keys())
-        if not stream_timestamps:
-            continue  # Skip this stream if there are no timestamps (this should never occur)
 
-        # Distribute bytes across the smaller sub-intervals of the aggregated timestamps
+        # check if first timestamp has non-zero bytes (missing initial zero-byte event)
+        first_timestamp = stream_timestamps[0]
+        if stream_bytes[first_timestamp] > 0:
+            print(f"Warning: Stream {source_id} - First timestamp ({first_timestamp}) has {stream_bytes[first_timestamp]} bytes.")
+            print(f"         These bytes will be dropped. Stream should start with a 0-byte event.")
+            # Treat first timestamp as the "zero" baseline - drop its bytes and use it as interval start
+            # dropping these bytes should have minimal impact on the overall throughput calculation
+            stream_bytes[first_timestamp] = 0
+
+        # After grouping duplicate timestamps together, distribute these bytes across the smaller sub-intervals of the aggregated timestamps
         for i in range(1, len(aggregated_time)):
-            #smallest sub-interval:
+            #specifiy the smallest interval of the aggregated timestamps
             current_time = aggregated_time[i]
             prev_time = aggregated_time[i-1]
 
-            for j in range(len(stream_timestamps) - 1): #  For each HTTP stream
+            for j in range(len(stream_timestamps) - 1): #  For each stream interval
                 #Look at the current interval of timestamps from the stream - this should be >= the intervals in aggregated_time
                 start_time = stream_timestamps[j]
                 end_time = stream_timestamps[j+1]
@@ -219,21 +208,26 @@ def sum_all_bytecounts_across_http_streams(byte_list, aggregated_time):
                 if end_time <= prev_time or start_time >= current_time:
                     continue
 
-                # Calculate the time-based proportion of bytes to add
-                interval_duration = end_time - start_time
+                interval_duration = end_time - start_time #calculate the interval from the HTTP Stream
+
+                # Handle zero-duration intervals (multiple events at same timestamp)
                 if interval_duration <= 0:
-                    continue  # Skip invalid intervals
+                    # Zero-duration: attribute bytes directly to end_time without distribution
+                    if end_time in byte_count:
+                        byte_count[end_time][0] += stream_bytes[end_time]
+                        # Increment flow count if this is a new flow starting at this timestamp
+                        if j == 0 or (end_time > stream_timestamps[j-1]):
+                            byte_count[end_time][1] += 1
+                    continue  # Skip proportional distribution for zero-duration intervals
 
                 # Calculate overlap between the http stream interval and the current sub-interval
                 overlap_start = max(prev_time, start_time)
                 overlap_end = min(current_time, end_time)
                 proportion = (overlap_end - overlap_start) / interval_duration
 
-                if proportion <= 0:
-                    continue  # Skip if no meaningful overlap
-
                 # Calculate bytes to add to the sub-interval from the aggregated timestamps
-                bytes_to_add = stream_bytes[start_time] * proportion
+                # The bytes at end_time represent data received during [start_time → end_time]
+                bytes_to_add = int(stream_bytes[end_time] * proportion)
 
                 # Add bytes to the current timestamp entry
                 if current_time in byte_count:
@@ -243,9 +237,5 @@ def sum_all_bytecounts_across_http_streams(byte_list, aggregated_time):
                     if j == 0 or (prev_time > stream_timestamps[j-1]):
                         byte_count[current_time][1] += 1
 
-
     print(f"Length of byte_count: {len(byte_count)}")
     return byte_count
-
-def find_percentage_of_test_all_flows_contributing():
-    pass

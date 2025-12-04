@@ -248,20 +248,37 @@ def analyze_throughput_intervals(throughput_results):
         return
 
     interval_diffs = {}
+    interval_throughputs = {}  # Track throughput values for each interval
+
     for i in range(1, len(throughput_results)):
         diff_key = round((throughput_results[i]['time'] - throughput_results[i-1]['time']) * 1000, 2)
         interval_diffs[diff_key] = interval_diffs.get(diff_key, 0) + 1
 
+        # Store throughput values for this interval
+        if diff_key not in interval_throughputs:
+            interval_throughputs[diff_key] = []
+        interval_throughputs[diff_key].append(throughput_results[i]['throughput'])
+
     # Print the interval differences in a readable format
     print("\nInterval Time Differences Distribution:")
-    print(f"{'Time Diff':>10} | {'Count':>10} | {'Percentage':>10}")
+    print(f"{'Time Diff':>12} | {'Count':>10} | {'Percentage':>10} | {'Total Time':>11} | {'Mean Throughput':>15}")
     total_entries = len(throughput_results) - 1
 
     interval_diffs = sorted(interval_diffs.items())
+    sum_counts = 0
+    sum_total_times = 0
+
     for interval, count in interval_diffs:
         percentage = (count / total_entries) * 100
-        print(f"{interval:>10}ms | {count:>10} | {percentage:>9.1f}%")
-    print("-" * 40)
+        total_time = interval * count
+        mean_throughput = sum(interval_throughputs[interval]) / len(interval_throughputs[interval])
+        print(f"{interval:>10}ms | {count:>10} | {percentage:>9.1f}% | {total_time:>9.0f}ms | {mean_throughput:>12.2f} Mbps")
+        sum_counts += count
+        sum_total_times += total_time
+
+    print("-" * 80)
+    print(f"{'TOTAL':>12} | {sum_counts:>10} | {'100.0%':>10} | {sum_total_times:>9.0f}ms |")
+    print("-" * 80)
 
 """
 Find the mean, median, and range of throughput for all entries -- a rudimentary way of finding the throuhgput over the entire test

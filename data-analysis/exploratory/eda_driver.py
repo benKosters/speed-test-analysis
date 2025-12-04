@@ -9,7 +9,7 @@ For a RABBITS test, this should look like: python3 eda_driver.py ../tests/test_1
 Steps of the program:
 1) normalize the data into an form that is agnositc of the test type (upload or download).
 2) aggregate all unique timestamps that occur, so that we can properly distribute the bytecounts from each HTTP stream.
-3) find the proportion of bytes send within each time interval, summing them up and keeping track of how many flows are contributing to the bytecount.
+3) find the proportion of bytes send within each time interval, summing them up and keeping track of many flows are contributing to the bytecount.
 4) calculate the throughput based on the bytecounts and the time intervals.
 5)plot throughput
 
@@ -33,6 +33,10 @@ import throughput_calculation as tp_calc
 import summary_statistics as ss
 import utilities
 
+# Import visualization modules
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'exploratory_plots'))
+import plot_bytecount_bar as pbc
+
 
 # Set up argument parsing to allow a base path as input
 parser = argparse.ArgumentParser(description='Process byte time and latency JSON files.')
@@ -48,7 +52,7 @@ print(f"Current Working Directory: {os.getcwd()}")
 # Construct the full file paths by appending the specific filenames
 byte_file = os.path.abspath(os.path.join(args.base_path, "byte_time_list.json"))
 current_file = os.path.abspath(os.path.join(args.base_path, "current_position_list.json"))
-latency_file = os.path.abspath(os.path.join(args.base_path, "latency.json"))
+latency_file = os.path.abspath(os.path.join(args.base_path, "latency_data.json"))
 loaded_latency_file = os.path.abspath(os.path.join(args.base_path, "loaded_latency.json"))
 socket_file = os.path.abspath(os.path.join(args.base_path, "socketIds.json"))
 
@@ -154,24 +158,23 @@ test_data["max_flow_percentage"] = max_flow_percentage
 
 # For a full slate of tests for presenting the final product, calculate throughput for 2 and 10 second intervals with max flow ONLY
 throughput_results_2ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 2, begin_time)
-
-# print("Throughput results 2ms:")
-# for i in range(10):
-#     print(throughput_results_2ms[i])
-
 throughput_results_50ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 50, begin_time)
+
+throughput_results_2ms_tracking_loss, discarded_stats = tp_calc.calculate_interval_throughput_tracking_discarded_data(aggregated_time, byte_count, num_flows, 100, begin_time)
+print("Discarded Stats for 100ms throughput calculation:", discarded_stats)
+
 
 #throughput grouped by number of flows contributing - used to show there is still a throughput even though not all flows are contributing
 throughput_by_flows_2ms = {}
 for flow_count in range(1, num_flows + 1):
-    throughput_by_flows_2ms[flow_count] = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, flow_count, 2, begin_time)
-    #throughput_by_flows_2ms[flow_count] = tp_calc.calculate_traditional_throughput(aggregated_time, byte_count, flow_count, begin_time)
+    throughput_by_flows_2ms[flow_count] = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, flow_count, 1, begin_time)
+
 
 throughput_by_flows_50ms = {}
 for flow_count in range(1, num_flows + 1):
     throughput_by_flows_50ms[flow_count] = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, flow_count, 50, begin_time)
 
-# print("Number of througput points for 2ms:", len(throughput_results_2ms))
+print("distribution of throughput values using 2ms minimum interval:")
 validate.analyze_throughput_intervals(throughput_results_2ms)
 
 print("Statistics for the throughput calculated over 2ms intervals")
@@ -185,16 +188,14 @@ test_data["throughput_2ms"] = {
     "throughput_range_mbps": throughput_range
 }
 
-# print("stats for 50ms interval")
-# num_points_50ms, mean_throughput_50ms, median_throughput_50ms, min_throughput_50ms, max_throughput_50ms, throughput_range_50ms = validate.throughput_mean_median_range(throughput_results_50ms)
-# test_data["throughput_50ms"] = {
-#     "num_points": num_points_50ms,
-#     "mean_throughput_mbps": mean_throughput_50ms,
-#     "median_throughput_mbps": median_throughput_50ms,
-#     "min_throughput_mbps": min_throughput_50ms,
-#     "max_throughput_mbps": max_throughput_50ms,
-#     "throughput_range_mbps": throughput_range_50ms
-# }
+#Generate throughput results using A and A's traditional method:
+throughput_results_traditional = tp_calc.calculate_traditional_throughput(aggregated_time, byte_count, num_flows, begin_time)
+print("distribution of throughput values using traditional method:")
+# validate.analyze_throughput_intervals(throughput_results_traditional)
+# print("Length of aggregated bytecount:", len(byte_count))
+print("Number of throughput points (traditional):", len(throughput_results_traditional))
+validate.throughput_mean_median_range(throughput_results_traditional)
+
 
 #print out the number of flows contributing to a byte count, and the frequency that they occur.
 #ss.calculate_occurrence_sums(byte_count)
@@ -206,33 +207,16 @@ test_title = "Spacelink Single Flow, Test 1"
 df_2ms = pd.DataFrame(throughput_results_2ms) # df for throughput
 df_10ms = pd.DataFrame(throughput_results_50ms) # df for throughput
 
-# #graphs to be used in final report:
-# #1) plot showing throughput with only the max number of flows
-#tp_plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
-#plot.plot_throughput_and_http_streams(df_10ms, title=f"{test_title} 10ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
 
-#2 and 3) plot throughput with all points classified by how many flows are contributing (2ms and 10ms bin sizes)
-tp_plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=None,scatter= True, save =args.save, base_path = args.base_path)
-#tp_plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_50ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 10ms Interval",save =args.save, base_path = args.base_path)
+tp_plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time= 16, source_times=source_times, begin_time=begin_time, title=None, scatter=True, save=args.save, base_path=args.base_path)
+# tp_plot.plot_throughput_rema_separated_by_flows_socket_grouped(throughput_by_flows_2ms, start_time=0, end_time=16, source_times=source_times, begin_time=begin_time, title=None, scatter=True, save=args.save, base_path=args.base_path)
 
-# # # 4 and 5) plot throughput for all flows, with scatter plot overlay
-#plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 2ms Interval",scatter= True, save =args.save, base_path = args.base_path)
-# plot.plot_throughput_rema_separated_by_flows(throughput_by_flows_10ms, start_time=0, end_time=15, source_times=source_times, begin_time=begin_time, title=f"{test_title} All Flows, 10ms Interval", scatter = True, save =args.save, base_path = args.base_path)
 
-# # 6 and 7) Plot individual HTTP streams for both upload and download tests
-if test_type == "upload":
-    pass
-    #tp_plot.plot_throughput_and_http_streams(df_2ms, title=f"{test_title} 2ms Interval", source_times=source_times, begin_time=begin_time, save =args.save, base_path = args.base_path)
-    # current_list = hf.load_json(current_file)
-    # # Normalize the timestamps in current_position_list (Use this if plotting each individual source's byte counts)
-    # normalized_current_list = hf.normalize_current_position_list(current_position_list=current_list,begin_time=begin_time)
-    #tp_plot.plot_rema_per_http_stream(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
-    # # Plot aggregated bytecounts for upload
-    # plot.plot_aggregated_bytecount(normalized_current_list, test_type="upload", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
-elif test_type == "download":
-    pass
-    # For download tests, use the normalized byte_list directly
-    #plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
-    # Plot aggregated bytecounts for download
-    #plot.plot_aggregated_bytecount(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
-    #plot.plot_rema_per_http_stream(byte_list, test_type="download", save=args.save, base_path=args.base_path, source_times=source_times, begin_time=begin_time)
+result = tp_calc.calculate_throughput_weighted_points(aggregated_time, byte_count, num_flows, begin_time)
+
+# The weighted mean equals overall throughput:
+weighted_mean = sum(p['throughput'] * p['weight'] for p in result['weighted_points'])
+print(f"Weighted mean: {weighted_mean:.2f} Mbps")
+
+# Create standard bar chart
+pbc.create_bytecount_bar_chart(byte_count, begin_time=begin_time, title="Bytes Transferred per Time Interval", save_path=None, max_time=None, source_times=source_times)
