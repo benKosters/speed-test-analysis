@@ -9,9 +9,13 @@ RESULTS_DIR="$BASE_DIR/ookla-test-results"
 # Configuration
 BATCH_SIZE=20  # The number of tests before uploading to the S3 bucket
 WAIT_TIME=120  # Cooldown period before continuing tests -- this should not be too long
+TEST_NAME=""   # Name of the test (required)
 
 show_help() {
-    echo "Usage: ./execute-many-tests.sh [options]"
+    echo "Usage: ./execute-many-tests.sh -n <test_name> [options]"
+    echo ""
+    echo "Required:"
+    echo "  -n, --name <name>        Name for this test batch (required)"
     echo ""
     echo "Options:"
     echo "  -b, --batch <number>     Number of tests before uploading to S3 (default: 20)"
@@ -19,14 +23,22 @@ show_help() {
     echo "  -h, --help               Show this help message"
     echo ""
     echo "Examples:"
-    echo "  ./execute-many-tests.sh                    # Use default settings"
-    echo "  ./execute-many-tests.sh -b 10 -w 60       # Upload every 10 tests, wait 60 seconds"
-    echo "  ./execute-many-tests.sh --batch 5 --wait 30"
+    echo "  ./execute-many-tests.sh -n michwave_test1"
+    echo "  ./execute-many-tests.sh -n experiment_jan10 -b 10 -w 60"
+    echo "  ./execute-many-tests.sh --name my_test --batch 5 --wait 30"
     exit 0
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -n|--name)
+            TEST_NAME="$2"
+            if [ -z "$TEST_NAME" ]; then
+                echo "Error: Test name cannot be empty"
+                exit 1
+            fi
+            shift 2
+            ;;
         -b|--batch)
             BATCH_SIZE="$2"
             if ! [[ "$BATCH_SIZE" =~ ^[0-9]+$ ]] || [ "$BATCH_SIZE" -le 0 ]; then
@@ -54,6 +66,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Check if test name was provided
+if [ -z "$TEST_NAME" ]; then
+    echo "Error: Test name is required. Use -n or --name to specify."
+    echo "Use -h or --help for usage information"
+    exit 1
+fi
+
 # Load env variables
 if [ -f "$ENV_FILE" ]; then
     export $(grep -v '^#' "$ENV_FILE" | xargs)
@@ -68,59 +87,12 @@ if ! command -v aws >/dev/null 2>&1; then
     exit 1
 fi
 
-# Function to compress and upload batch
-# upload_batch() {
-#     local batch_num=$1
-#     echo "[$(date)] Starting upload process for batch $batch_num" | tee -a "$LOG_FILE"
-
-#     local timestamp=$(date +"%Y%m%d_%H%M%S")
-#     local archive_name="ookla_tests_batch${batch_num}_${timestamp}.tar.gz"
-#     local archive_path="$BASE_DIR/$archive_name"
-
-#     echo "[$(date)] Compressing test results." | tee -a "$LOG_FILE"
-#     if tar -czf "$archive_path" -C "$BASE_DIR" ookla-test-results/ 2>> "$LOG_FILE"; then
-#         echo "[$(date)] Compression successful: $(du -h "$archive_path" | cut -f1)" | tee -a "$LOG_FILE"
-#     else
-#         echo "[$(date)] Error: Compression failed" | tee -a "$LOG_FILE"
-#         return 1
-#     fi
-
-#     # Upload to S3
-#     echo "[$(date)] Uploading to S3 bucket: $S3_BUCKET_NAME" | tee -a "$LOG_FILE"
-#     if aws s3 cp "$archive_path" "s3://$S3_BUCKET_NAME/" 2>> "$LOG_FILE"; then
-#         echo "[$(date)] Upload successful" | tee -a "$LOG_FILE"
-
-#         # Verify upload
-#         if aws s3 ls "s3://$S3_BUCKET_NAME/$archive_name" >/dev/null 2>&1; then
-#             echo "[$(date)] Upload verified in S3" | tee -a "$LOG_FILE"
-
-#             # Clean up local files
-#             echo "[$(date)] Removing local test files" | tee -a "$LOG_FILE"
-#             rm -rf "$RESULTS_DIR"/*
-#             rm -f "$archive_path"
-#             echo "[$(date)] Local cleanup complete" | tee -a "$LOG_FILE"
-
-#             echo "[$(date)] Waiting $WAIT_TIME seconds before continuing." | tee -a "$LOG_FILE"
-#             sleep $WAIT_TIME
-
-#             return 0
-#         else
-#             echo "[$(date)] Error: Could not verify upload in S3" | tee -a "$LOG_FILE"
-#             return 1
-#         fi
-#     else
-#         echo "[$(date)] Error: Upload to S3 failed" | tee -a "$LOG_FILE"
-#         return 1
-#     fi
-# }
-# Replace the upload_batch() function with this:
-# Replace the upload_batch() function with this:
 upload_batch() {
     local batch_num=$1
     echo "[$(date)] Starting upload process for batch $batch_num" | tee -a "$LOG_FILE"
 
     local timestamp=$(date +"%Y-%m-%d_%H%M")
-    local s3_prefix="ookla_tests_batch${batch_num}_${timestamp}"
+    local s3_prefix="${TEST_NAME}_ookla_tests_batch${batch_num}_${timestamp}"
 
     echo "[$(date)] Compressing PCAP files for optimal upload (using gzip -9)..." | tee -a "$LOG_FILE"
 
@@ -201,6 +173,7 @@ count_tests() {
 }
 
 echo "[$(date)] Starting driver to run many Ookla tests" | tee -a "$LOG_FILE"
+echo "[$(date)] Test name: $TEST_NAME" | tee -a "$LOG_FILE"
 echo "[$(date)] Batch size: $BATCH_SIZE tests" | tee -a "$LOG_FILE"
 echo "[$(date)] S3 bucket: $S3_BUCKET_NAME" | tee -a "$LOG_FILE"
 
