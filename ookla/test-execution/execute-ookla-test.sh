@@ -15,6 +15,7 @@ OUTPUT_DIR=""
 PCAP_FLAG=false
 DEV_MODE=false # dev mode will just place output in dev_tests/, rewriting any existing files - used when developing this tool
 INTERFACE="eth0"
+CPU_MONITOR=false
 
 # Function to display help
 show_help() {
@@ -27,6 +28,7 @@ show_help() {
     echo "  -p, --pcap               Enable packet capture during test"
     echo "  -d, --dev                Enable development mode"
     echo "  -i, --interface <iface>  Network interface for packet capture (default: eth0)"
+    echo "  -m, --cpu-monitor        Enable CPU monitoring with someta"
     echo "  -h, --help               Show this help message"
     echo ""
     echo "Example:"
@@ -60,6 +62,10 @@ while [[ $# -gt 0 ]]; do
         -i|--interface)
             INTERFACE="$2"
             shift 2
+            ;;
+        -m|--cpu-monitor)
+            CPU_MONITOR=true
+            shift
             ;;
         -h|--help)
             show_help
@@ -106,6 +112,7 @@ echo "  Server:      $SERVER"
 echo "  Connection:  $CONNECTION"
 echo "  Output dir:  $OUTPUT_DIR"
 echo "  Packet cap:  $PCAP_FLAG"
+echo "  CPU monitor: $CPU_MONITOR"
 echo "  Dev mode:    $DEV_MODE"
 if [ "$PCAP_FLAG" = true ]; then
     echo "  Interface:   $INTERFACE"
@@ -117,11 +124,9 @@ echo "---------------------------------------------"
 if [ "$PCAP_FLAG" = true ]; then
     PCAP_FILE="$OUTPUT_DIR/tcp_capture_${TIMESTAMP}.pcap"
 
-    # Create output directory with proper permissions
     mkdir -p "$OUTPUT_DIR"
     chmod -R 777 "$OUTPUT_DIR"
 
-    # Pre-create and set permissions on the pcap file
     touch "$PCAP_FILE"
     chmod 666 "$PCAP_FILE"
 
@@ -148,15 +153,13 @@ if [ "$PCAP_FLAG" = true ]; then
     # Check if dumpcap started successfully
     sleep 2
     if ! ps -p $TSHARK_PID > /dev/null; then
-        echo "Warning: dumpcap failed to start. Check $OUTPUT_DIR/capture_output.log for details."
-        # Print out the error log if it exists
+        echo "Warning: dumpcap failed to start."
         if [ -f "$OUTPUT_DIR/capture_output.log" ]; then
             echo "dumpcap error: $(cat "$OUTPUT_DIR/capture_output.log")"
         fi
         PCAP_FLAG=false
     else
         echo "dumpcap process started with PID $TSHARK_PID"
-        # Try to observe the first few lines of output
         sleep 3
         if [ -f "$OUTPUT_DIR/capture_output.log" ]; then
             echo "dumpcap output: $(head -3 "$OUTPUT_DIR/capture_output.log")"
@@ -170,10 +173,17 @@ JS_COMMAND="$JS_COMMAND -s \"$SERVER\""
 JS_COMMAND="$JS_COMMAND -c \"$CONNECTION\""
 JS_COMMAND="$JS_COMMAND -o \"$OUTPUT_DIR\""
 
-#run the Ookla test
-echo "Executing: $JS_COMMAND"
-eval "$JS_COMMAND"
-TEST_EXIT_CODE=$?
+# Use someta for CPU monitoring, if enabled
+if [ "$CPU_MONITOR" = true ]; then
+    SOMETA_BASENAME="$OUTPUT_DIR/cpu_metrics"
+    echo "Beginning CPU monitoring."
+    someta -M cpu -f "$SOMETA_BASENAME" -c "$JS_COMMAND"
+    TEST_EXIT_CODE=$?
+else
+    # Run the Ookla test normally
+    eval "$JS_COMMAND"
+    TEST_EXIT_CODE=$?
+fi
 
 # Stop packet capture if pcap flag is enabled
 if [ "$PCAP_FLAG" = true ]; then

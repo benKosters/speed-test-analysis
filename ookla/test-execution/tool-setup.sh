@@ -18,5 +18,42 @@ sudo usermod -a -G wireshark $USER
 # Set capabilities on dumpcap (allows non-root packet capture)
 sudo setcap cap_net_raw,cap_net_admin+eip /usr/bin/dumpcap
 
-echo "Setup complete. Please log out and log back in for group changes to take effect." #sudo reboot
-echo "After logging back in, you can run ./execute-ookla-test.sh without sudo."
+echo "Installing Go"
+
+echo "Checking for Go installation..."
+if ! command -v go >/dev/null 2>&1; then
+    echo "Go not found. Installing Go..."
+    if command -v apt-get >/dev/null 2>&1; then
+        # For Debian/Ubuntu/Raspberry Pi OS
+        sudo apt-get install -y golang-go
+    fi
+
+    # Set up Go environment variables if they don't exist
+    if ! grep -q "GOPATH" ~/.bashrc; then
+        echo 'export GOPATH=$HOME/go' >> ~/.bashrc
+        echo 'export PATH=$PATH:$GOPATH/bin' >> ~/.bashrc
+        export GOPATH=$HOME/go
+        export PATH=$PATH:$GOPATH/bin
+    fi
+else
+    echo "Go is already installed ($(go version))"
+fi
+
+# Add Go to PATH permanently
+if ! grep -q "/usr/local/go/bin" ~/.bashrc; then
+    echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+    echo 'export GOPATH=$HOME/go' >> ~/.bashrc
+    echo 'export PATH=$PATH:$GOPATH/bin' >> ~/.bashrc
+fi
+
+echo "Installing someta..."
+
+# Install someta
+if ! command -v someta >/dev/null 2>&1; then
+    go install github.com/jsommers/someta@latest
+else
+    echo "someta is already installed"
+fi
+
+echo "Setup complete. Use sudo reboot to apply group changes."
+echo "After reboot, run 'source ~/.bashrc' to update PATH in your current shell."
