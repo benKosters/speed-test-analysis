@@ -1,0 +1,9 @@
+.env
+*.log
+ookla-test-results/
+node_modules/
+.git/
+.gitignore
+README.md
+*.tar.gz
+*.pcap

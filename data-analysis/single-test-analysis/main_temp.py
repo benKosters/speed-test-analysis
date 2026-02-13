@@ -1,0 +1,225 @@
+"""
+This is the main driver for exploratory data analysis (just learning about one single test)
+
+For a Conventional Ookla test, the command is: python3 eda_driver.py ../../ookla/test-execution/ookla-test-results/michwave-multi-2025-10-02_1945 --save
+
+For a RABBITS test, this should look like: python3 eda_driver.py ../tests/test_1_ookla_upload_multi_5_30000000/ --save
+
+
+Steps of the program:
+1) normalize the data into an form that is agnositc of the test type (upload or download).
+2) aggregate all unique timestamps that occur, so that we can properly distribute the bytecounts from each HTTP stream.
+3) find the proportion of bytes send within each time interval, summing them up and keeping track of many flows are contributing to the bytecount.
+4) calculate the throughput based on the bytecounts and the time intervals.
+5)plot throughput
+
+
+**NOTE:** when plotting or comparing latency.json or loaded_latency.json, the timestamps need to be normalized to compare them against the throughput.
+
+"""
+import json
+import argparse
+import sys
+import os
+import pandas as pd
+
+# Custom modules.
+import data_normalization as dn
+import dimension_throughput_calc as tp_calc
+import statistics
+import plots
+import utilities
+
+#Just for testing:
+import time
+
+# Set up argument parsing to allow a base path as input
+parser = argparse.ArgumentParser(description='Process byte time and latency JSON files.')
+parser.add_argument('base_path', type=str, help='Base path to the JSON files')
+parser.add_argument('--save', action='store_true', help='Save plots to plot_images directory')
+parser.add_argument('--bin', type=int, default=1, help='Bin size for aggregating data')
+
+args = parser.parse_args()
+print(f"Bin Size for Aggregating Data: {args.bin}")
+# Print base path and working directory for debugging
+print(f"Provided Base Path: {args.base_path}")
+print(f"Current Working Directory: {os.getcwd()}")
+
+# Construct the full file paths by appending the specific filenames
+byte_file = os.path.abspath(os.path.join(args.base_path, "byte_time_list.json"))
+current_file = os.path.abspath(os.path.join(args.base_path, "current_position_list.json"))
+latency_file = os.path.abspath(os.path.join(args.base_path, "latency_data.json"))
+loaded_latency_file = os.path.abspath(os.path.join(args.base_path, "loaded_latency.json"))
+socket_file = os.path.abspath(os.path.join(args.base_path, "socketIds.json"))
+
+
+time.sleep(3)
+run_normalization_driver = dn.run_normalization_driver(args.base_path, socket_file=socket_file)
+time.sleep(3)
+
+
+#Store information about the test, to be saved as JSON file
+test_data = {}
+
+# Check and load files
+files_to_check = [byte_file, current_file, loaded_latency_file]
+if os.path.exists(latency_file):
+    files_to_check.append(latency_file)
+
+for file_path in files_to_check:
+    print(f"Checking: {file_path}")
+    if not os.path.exists(file_path):
+        print(f"ERROR: File not found - {file_path}\n")
+    else:
+        print(f"File exists: {file_path}\n")
+
+if not os.path.exists(latency_file):
+    print(f"Optional file (unloaded latency): {latency_file}")
+    print("File not found - this is OK if no unload URLs were used in the test\n")
+else:
+    print(f"Optional file (unloaded latency): {latency_file}")
+    print("File exists - unloaded latency data will be included\n")
+print()
+
+
+#-----------------Step 1: Normalize Data-------------------------
+"""
+ Normalize the test data based on the test type (upload or download) - This function is defined in throughput_calculation_functions.py
+ #FIXME: test_type might not be needed.
+"""
+byte_list, test_type = dn.normalize_test_data(byte_file, current_file, latency_file)
+
+normalized_byte_list_file = os.path.abspath(os.path.join(args.base_path, "normalized_byte_list.json"))
+
+print(f"Byte List Length: {len(byte_list)}")
+
+#----------------------Step 2: Aggregating timestamps----------------------------------------------
+"""
+In order to calculate throughput, (especially for multiple flows) we need to aggregate the timestamps to find
+the intervals of time that byte counts were being sent over.
+"""
+aggregated_time, source_times, begin_time = dn.aggregate_timestamps_and_find_stream_durations(byte_list, socket_file)
+old = -1
+
+test_data["count_of_aggregated_timestamps"] = len(aggregated_time)
+
+for x in aggregated_time:
+    if x == old:
+        print("Found a duplicate timestamp in aggregated_time:", x)
+
+statistics.save_socket_stream_data(byte_list, source_times, args.base_path, print_output=False)
+print()
+
+#--------------------------------Step 3: Summing bytecounts for timestamps------------------------
+
+byte_count_file = os.path.abspath(os.path.join(args.base_path, "byte_count.json"))
+
+# If the file exists, load it; otherwise, calculate and save it
+if os.path.exists(byte_count_file):
+    print(f"Loading byte_count data: {byte_count_file}")
+    # Load the byte_count data and convert string keys back to integers
+    byte_count_raw = utilities.load_json(byte_count_file)
+    # Convert the dictionary keys from strings back to integers
+    byte_count = {int(timestamp): value for timestamp, value in byte_count_raw.items()}
+    print(f"Converted {len(byte_count)} timestamp keys from strings to integers")
+else:
+    print(f"Calculating and saving byte_count data: {byte_count_file}")
+    byte_count = dn.sum_all_bytecounts_across_http_streams(byte_list, aggregated_time)
+    # Save byte_count
+    with open(byte_count_file, 'w') as f:
+        json.dump(byte_count, f, indent=4)
+
+#Print some stats about the byte_count
+total_raw_bytes, total_processed_bytes, list_duration_sec, count_duration_sec, percent_loss = dn.byte_count_validation(byte_list, byte_count)
+test_data["total_raw_bytes"] = total_raw_bytes
+test_data["total_processed_bytes"] = total_processed_bytes
+test_data["list_duration_sec"] = list_duration_sec
+test_data["count_duration_sec"] = count_duration_sec
+test_data["percent_byte_loss"] = percent_loss
+
+#TODO - calculate and extract more metrics
+
+
+
+
+
+# ----------------------------------Step 4: Throughput Calculation---------------------------------------------
+#TODO  update this section to unclude DBSCAN code here!
+
+
+# After DBSCAN, apply Slow Start Filtering
+#
+throughput_results = []
+num_flows = max(byte_count[timestamp][1] for timestamp in byte_count) #find the max number of flows - there should never be MORE than the defined number of flows contributing to a bytecount
+print("max number of flows:", num_flows)
+test_data["num_sockets"] = num_flows
+
+formated_flows, max_flow_percentage = statistics.calculate_percent_of_all_flows_contributing(byte_count, num_flows)
+
+test_data["formatted_flows"] = formated_flows
+test_data["max_flow_percentage"] = max_flow_percentage
+
+# For a full slate of tests for presenting the final product, calculate throughput for 2 and 10 second intervals with max flow ONLY
+throughput_results_2ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, args.bin, begin_time)
+throughput_results_50ms = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, num_flows, 50, begin_time)
+
+throughput_results_2ms_tracking_loss, discarded_stats = tp_calc.calculate_interval_throughput_tracking_discarded_data(aggregated_time, byte_count, num_flows, 100, begin_time)
+print("Discarded Stats for 100ms throughput calculation:", discarded_stats)
+
+
+#throughput grouped by number of flows contributing - used to show there is still a throughput even though not all flows are contributing
+throughput_by_flows_2ms = {}
+for flow_count in range(1, num_flows + 1):
+    throughput_by_flows_2ms[flow_count] = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, flow_count, 1, begin_time)
+
+
+throughput_by_flows_50ms = {}
+for flow_count in range(1, num_flows + 1):
+    throughput_by_flows_50ms[flow_count] = tp_calc.calculate_interval_throughput(aggregated_time, byte_count, flow_count, 50, begin_time)
+
+print("distribution of throughput values using 2ms minimum interval:")
+dn.analyze_throughput_intervals(throughput_results_2ms)
+
+print("Statistics for the throughput calculated over 2ms intervals")
+num_points, mean_throughput, median_throughput, min_throughput, max_throughput, throughput_range = dn.throughput_mean_median_range(throughput_results_2ms)
+test_data["throughput_2ms"] = {
+    "num_points": num_points,
+    "mean_throughput_mbps": mean_throughput,
+    "median_throughput_mbps": median_throughput,
+    "min_throughput_mbps": min_throughput,
+    "max_throughput_mbps": max_throughput,
+    "throughput_range_mbps": throughput_range
+}
+
+#Generate throughput results using A and A's traditional method:
+throughput_results_traditional = tp_calc.calculate_traditional_throughput(aggregated_time, byte_count, num_flows, begin_time)
+print("distribution of throughput values using traditional method:")
+# validate.analyze_throughput_intervals(throughput_results_traditional)
+# print("Length of aggregated bytecount:", len(byte_count))
+print("Number of throughput points (traditional):", len(throughput_results_traditional))
+dn.throughput_mean_median_range(throughput_results_traditional)
+
+
+#print out the number of flows contributing to a byte count, and the frequency that they occur.
+#ss.calculate_occurrence_sums(byte_count)
+test_data_file = os.path.abspath(os.path.join(args.base_path, "test_data_summary.json"))
+utilities.save_json(test_data, test_data_file)
+
+#---------------------------------------------Plotting-------------------------------------------------
+test_title = "Spacelink Single Flow, Test 1"
+df_2ms = pd.DataFrame(throughput_results_2ms) # df for throughput
+df_10ms = pd.DataFrame(throughput_results_50ms) # df for throughput
+
+
+# tp_pl.plot_throughput_rema_separated_by_flows(throughput_by_flows_2ms, start_time=0, end_time= 16, source_times=source_times, begin_time=begin_time, title=None, scatter=True, save=args.save, base_path=args.base_path)
+# tp_plot.plot_throughput_rema_separated_by_flows_socket_grouped(throughput_by_flows_2ms, start_time=0, end_time=16, source_times=source_times, begin_time=begin_time, title=None, scatter=True, save=args.save, base_path=args.base_path)
+
+
+result = tp_calc.calculate_throughput_weighted_points(aggregated_time, byte_count, num_flows, begin_time)
+
+# The weighted mean equals overall throughput:
+weighted_mean = sum(p['throughput'] * p['weight'] for p in result['weighted_points'])
+print(f"Weighted mean: {weighted_mean:.2f} Mbps")
+
+# Create standard bar chart
+plots.create_bytecount_bar_chart(byte_count, begin_time=begin_time, title="Bytes Transferred per Time Interval", save_path=os.path.join(args.base_path, "plot_images/bytecount_bar_chart.png"), max_time=None, source_times=source_times)
