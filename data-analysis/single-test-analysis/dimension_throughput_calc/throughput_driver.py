@@ -2,7 +2,7 @@ import dimension_throughput_calc as tp_calc
 
 def run_throughput_calculation_driver(byte_count, aggregated_time, source_times, begin_time, bin_size, stats_accumulator):
     throughput_results = []
-    num_flows = stats_accumulator.get("num_flows")
+    num_flows = stats_accumulator.get("num_sockets")
 
 
     # For a full slate of tests for presenting the final product, calculate throughput for 2 and 10 second intervals with max flow ONLY

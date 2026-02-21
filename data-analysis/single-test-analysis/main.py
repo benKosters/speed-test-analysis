@@ -26,15 +26,10 @@ import pandas as pd
 # Custom modules.
 import data_normalization as dn
 import dimension_throughput_calc as tp_calc
-import statistics
 import plots
 import utilities
 from statistics import StatisticsAccumulator
 import dimension_data_selection as data_selection
-
-
-#Just for testing:
-import time
 
 # Set up argument parsing to allow a base path as input
 parser = argparse.ArgumentParser(description='Process byte time and latency JSON files.')

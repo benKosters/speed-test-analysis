@@ -25,7 +25,7 @@ def run_normalization_driver(base_path, stats_accumulator, socket_file=None):
     byte_list, test_type = normalize_test_data(byte_file, current_file, latency_file)
     print(f"Normalized {len(byte_list)} streams ({test_type})")
     stats_accumulator.add('test_type', test_type)
-    stats_accumulator.add('num_http_streams', len(byte_list))
+    stats_accumulator.add('total_http_streams', len(byte_list))
 
     # Step 2: Aggregate timestamps
     print("\nAggregating timestamps")
@@ -57,7 +57,7 @@ def run_normalization_driver(base_path, stats_accumulator, socket_file=None):
     stats_accumulator.add('list_duration_sec', list_dur)
     stats_accumulator.add('count_duration_sec', count_dur)
     stats_accumulator.add('percent_byte_loss', percent_loss)
-    stats_accumulator.add('num_flows', num_flows)
+    stats_accumulator.add('num_sockets', num_flows)
 
     print(f"\n{percent_loss:.2f}% byte loss after processing")
     print("=" * 60)
