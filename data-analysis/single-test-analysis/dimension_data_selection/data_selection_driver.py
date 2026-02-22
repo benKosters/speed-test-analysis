@@ -2,11 +2,7 @@ def run_data_selection_driver(byte_count, aggregated_time, stats_accumulator):
     """
     """
     print("\n" + "=" * 60)
-    print("PHASE: DATA SELECTION")
-    print("=" * 60)
-
-    # === Analyze Flow Contribution Patterns ===
-    print("  [1/2] Analyzing flow contribution patterns")
+    print("Data selection driver")
 
     # Find maximum number of flows
     num_flows = max(byte_count[timestamp][1] for timestamp in byte_count)
@@ -21,17 +17,18 @@ def run_data_selection_driver(byte_count, aggregated_time, stats_accumulator):
     formatted_flows = {
         f"{i}_flows": {
             "count": flow_distribution[i],
-            "percentage": (flow_distribution[i] / total_points * 100) if total_points > 0 else 0
+            "percentage_of_points": (flow_distribution[i] / total_points * 100) if total_points > 0 else 0,
+            "percentage_of_time": (flow_distribution[i] / total_points * 100) if total_points > 0 else 0
         }
         for i in range(1, num_flows + 1)
     }
 
-    max_flow_percentage = formatted_flows.get(f"{num_flows}_flows", {}).get("percentage", 0)
+    max_flow_percentage = formatted_flows.get(f"{num_flows}_flows", {}).get("percentage_of_points", 0)
 
     # Add flow contribution statistics
     stats_accumulator.add('data_selection.flow_contribution', {
         'max_flows': num_flows,
-        'max_flow_percentage': max_flow_percentage,
+        'max_flow_percent_points': max_flow_percentage,
         'distribution': formatted_flows
     })
 

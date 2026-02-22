@@ -10,6 +10,8 @@ RESULTS_DIR="$BASE_DIR/ookla-test-results"
 BATCH_SIZE=20  # The number of tests before uploading to the S3 bucket
 WAIT_TIME=120  # Cooldown period before continuing tests -- this should not be too long
 TEST_NAME=""   # Name of the test (required)
+UPLOAD_TO_S3=true  # Upload to S3 and delete local files (default: true)
+FILTER_NETLOG=false  # Filter netlog data and remove netlog.json before upload (default: false)
 
 show_help() {
     echo "Usage: ./execute-many-tests.sh -n <test_name> [options]"
@@ -20,12 +22,16 @@ show_help() {
     echo "Options:"
     echo "  -b, --batch <number>     Number of tests before uploading to S3 (default: 20)"
     echo "  -w, --wait <seconds>     Cooldown period between batches in seconds (default: 120)"
+    echo "  -f, --filter             Filter netlog data and remove netlog.json before upload"
+    echo "  -l, --local              Keep tests local, do not upload to S3 or delete files"
     echo "  -h, --help               Show this help message"
     echo ""
     echo "Examples:"
     echo "  ./execute-many-tests.sh -n michwave_test1"
     echo "  ./execute-many-tests.sh -n experiment_jan10 -b 10 -w 60"
     echo "  ./execute-many-tests.sh --name my_test --batch 5 --wait 30"
+    echo "  ./execute-many-tests.sh -n local_test -l"
+    echo "  ./execute-many-tests.sh -n filtered_test -f"
     exit 0
 }
 
@@ -54,6 +60,14 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             shift 2
+            ;;
+        -f|--filter)
+            FILTER_NETLOG=true
+            shift
+            ;;
+        -l | --local)
+            UPLOAD_TO_S3=false
+            shift
             ;;
         -h|--help)
             show_help
@@ -87,9 +101,66 @@ if ! command -v aws >/dev/null 2>&1; then
     exit 1
 fi
 
+# Check if Node.js is installed (needed for filtering)
+if [ "$FILTER_NETLOG" = true ] && ! command -v node >/dev/null 2>&1; then
+    echo "Error: Node.js not installed. Install Node.js to use the --filter option."
+    exit 1
+fi
+
+filter_batch() {
+    echo "[$(date)] Filtering netlog data for all tests in batch..." | tee -a "$LOG_FILE"
+
+    local filter_script="$BASE_DIR/../netlog-filter/main.js"
+
+    if [ ! -f "$filter_script" ]; then
+        echo "[$(date)] Error: Filter script not found at $filter_script" | tee -a "$LOG_FILE"
+        return 1
+    fi
+
+    local test_count=0
+    local success_count=0
+    local netlog_removed_count=0
+
+    # Process each test directory in the results folder
+    for test_dir in "$RESULTS_DIR"/*/; do
+        if [ -d "$test_dir" ]; then
+            test_count=$((test_count + 1))
+            local test_name=$(basename "$test_dir")
+
+            echo "[$(date)] Filtering test: $test_name" | tee -a "$LOG_FILE"
+
+            # Run the filtering script
+            if node "$filter_script" "$test_dir" >> "$LOG_FILE" 2>&1; then
+                success_count=$((success_count + 1))
+
+                # Remove netlog.json after successful filtering
+                local netlog_file="${test_dir}netlog.json"
+                if [ -f "$netlog_file" ]; then
+                    local netlog_size=$(stat -c%s "$netlog_file" 2>/dev/null || echo "0")
+                    rm -f "$netlog_file"
+                    netlog_removed_count=$((netlog_removed_count + 1))
+                    echo "[$(date)] Removed netlog.json ($(numfmt --to=iec $netlog_size)) from $test_name" | tee -a "$LOG_FILE"
+                fi
+            else
+                echo "[$(date)] Warning: Filtering failed for $test_name" | tee -a "$LOG_FILE"
+            fi
+        fi
+    done
+
+    echo "[$(date)] Filtering complete: $success_count/$test_count tests processed, $netlog_removed_count netlog files removed" | tee -a "$LOG_FILE"
+    return 0
+}
+
 upload_batch() {
     local batch_num=$1
     echo "[$(date)] Starting upload process for batch $batch_num" | tee -a "$LOG_FILE"
+
+    # Filter netlog data if requested
+    if [ "$FILTER_NETLOG" = true ]; then
+        if ! filter_batch; then
+            echo "[$(date)] Warning: Filtering failed, continuing with upload" | tee -a "$LOG_FILE"
+        fi
+    fi
 
     local timestamp=$(date +"%Y-%m-%d_%H%M")
     local s3_prefix="${TEST_NAME}_ookla_tests_batch${batch_num}_${timestamp}"
@@ -175,7 +246,15 @@ count_tests() {
 echo "[$(date)] Starting driver to run many Ookla tests" | tee -a "$LOG_FILE"
 echo "[$(date)] Test name: $TEST_NAME" | tee -a "$LOG_FILE"
 echo "[$(date)] Batch size: $BATCH_SIZE tests" | tee -a "$LOG_FILE"
-echo "[$(date)] S3 bucket: $S3_BUCKET_NAME" | tee -a "$LOG_FILE"
+if [ "$UPLOAD_TO_S3" = true ]; then
+    echo "[$(date)] S3 bucket: $S3_BUCKET_NAME" | tee -a "$LOG_FILE"
+    echo "[$(date)] Upload mode: Tests will be uploaded and deleted after each batch" | tee -a "$LOG_FILE"
+else
+    echo "[$(date)] Local mode: Tests will be kept locally (no upload or deletion)" | tee -a "$LOG_FILE"
+fi
+if [ "$FILTER_NETLOG" = true ]; then
+    echo "[$(date)] Filtering: Netlog data will be filtered and netlog.json removed before upload" | tee -a "$LOG_FILE"
+fi
 
 test_count=0
 batch_num=1
@@ -196,14 +275,19 @@ while IFS= read -r CMD; do
         fi
 
         if [ $((test_count % BATCH_SIZE)) -eq 0 ] && [ $test_count -gt 0 ]; then
-            echo "[$(date)] Reached batch limit ($BATCH_SIZE tests). Starting upload process." | tee -a "$LOG_FILE"
+            if [ "$UPLOAD_TO_S3" = true ]; then
+                echo "[$(date)] Reached batch limit ($BATCH_SIZE tests). Starting upload process." | tee -a "$LOG_FILE"
 
-            if upload_batch $batch_num; then
-                echo "[$(date)] Batch $batch_num upload completed successfully" | tee -a "$LOG_FILE"
-                batch_num=$((batch_num + 1))
+                if upload_batch $batch_num; then
+                    echo "[$(date)] Batch $batch_num upload completed successfully" | tee -a "$LOG_FILE"
+                    batch_num=$((batch_num + 1))
+                else
+                    echo "[$(date)] Error: Batch $batch_num upload failed. Stopping execution." | tee -a "$LOG_FILE"
+                    exit 1
+                fi
             else
-                echo "[$(date)] Error: Batch $batch_num upload failed. Stopping execution." | tee -a "$LOG_FILE"
-                exit 1
+                echo "[$(date)] Reached batch limit ($BATCH_SIZE tests). Keeping tests locally." | tee -a "$LOG_FILE"
+                batch_num=$((batch_num + 1))
             fi
         fi
     fi
@@ -212,11 +296,15 @@ done < "$COMMANDS_FILE"
 # Upload any remaining tests if the batch limit is not reached but all configurations are done
 remaining_tests=$(count_tests)
 if [ $remaining_tests -gt 0 ]; then
-    echo "[$(date)] Uploading remaining $remaining_tests tests." | tee -a "$LOG_FILE"
-    if upload_batch "final"; then
-        echo "[$(date)] Final batch upload completed successfully" | tee -a "$LOG_FILE"
+    if [ "$UPLOAD_TO_S3" = true ]; then
+        echo "[$(date)] Uploading remaining $remaining_tests tests." | tee -a "$LOG_FILE"
+        if upload_batch "final"; then
+            echo "[$(date)] Final batch upload completed successfully" | tee -a "$LOG_FILE"
+        else
+            echo "[$(date)] Warning: Final batch upload failed" | tee -a "$LOG_FILE"
+        fi
     else
-        echo "[$(date)] Warning: Final batch upload failed" | tee -a "$LOG_FILE"
+        echo "[$(date)] All tests completed. $remaining_tests tests kept locally." | tee -a "$LOG_FILE"
     fi
 fi
 

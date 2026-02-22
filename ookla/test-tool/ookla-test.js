@@ -179,8 +179,12 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
     await page.screenshot({ path: output_dir + '/speedtest_result.png' });
     console.log("Test is complete!");
 
-    // Ensure the browser is closed gracefully to finalize netlog capture
     console.log("Closing browser to finalize netlog capture");
+    // Close the pages before closing the browser to make browser closure faster
+    const pages = await browser.pages();
+    for (const page of pages) {
+        await page.close();
+    }
     await browser.close();
     console.log("Browser closed. Netlog capture should now be finalized.");
 })();

@@ -10,10 +10,28 @@
 
 const fs = require('fs');
 const path = require('path');
-const { checkFilePath, readFileSync, ensureDirectoryExists, fixAndParseJSON, mapEventNamesToIds } = require('./file-utils');
+const { checkFilePath, readFileSync, ensureDirectoryExists, fixAndParseJSON, mapEventNamesToIds, parseJSONFromFile, writeFileSync } = require('./file-utils');
 const { url } = require('inspector');
 const { type } = require('os');
 
+const captureTestMetadata = (netlogPath) => {
+    //append metadata to existing speedtest_result.json file
+    directory = path.dirname(netlogPath);
+    const data = JSON.parse(readFileSync(netlogPath));
+    const netlog_constants = data.constants;
+
+    const os_type = netlog_constants.clientInfo.os_type;
+    const chrome_version = netlog_constants.clientInfo.version;
+    const speedtestResultPath = path.join(directory, 'speedtest_result.json');
+    try {
+        const existingData = parseJSONFromFile(speedtestResultPath);
+        existingData.os_type = os_type;
+        existingData.chrome_version = chrome_version;
+        writeFileSync(speedtestResultPath, JSON.stringify(existingData, null, 2));
+    } catch (error) {
+        console.error("Error:", error);
+    }
+}
 
 // Helper function to check if a URL has already been picked up
 function isUniqueUrl(list, newUrl) {
@@ -254,11 +272,10 @@ function separateHelloUrlsByTiming(url_list) {
  */
 function filterUrls(netlogFilePath) {
     checkFilePath(netlogFilePath);
-
     const netlogDir = path.dirname(netlogFilePath);
+    captureTestMetadata(netlogFilePath);
 
     let url_list = collectUrlsFromNetlog(netlogFilePath);
-
     let latency_urls = separateHelloUrlsByTiming(url_list);
 
     // Define paths for download and upload directories

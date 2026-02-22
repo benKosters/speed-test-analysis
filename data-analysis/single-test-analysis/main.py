@@ -1,9 +1,9 @@
 """
 This is the main driver for exploratory data analysis (just learning about one single test)
 
-For a Conventional Ookla test, the command is: python3 eda_driver.py ../../ookla/test-execution/ookla-test-results/michwave-multi-2025-10-02_1945 --save
+For a Conventional Ookla test, the command is: python3 main.py ../../ookla/test-tool/ookla-test-results/michwave-multi-2025-10-02_1945 --save
 
-For a RABBITS test, this should look like: python3 eda_driver.py ../tests/test_1_ookla_upload_multi_5_30000000/ --save
+For a RABBITS test, this should look like: python3 main.py ../tests/test_1_ookla_upload_multi_5_30000000/ --save
 
 
 Steps of the program:
@@ -17,17 +17,12 @@ Steps of the program:
 **NOTE:** when plotting or comparing latency.json or loaded_latency.json, the timestamps need to be normalized to compare them against the throughput.
 
 """
-import json
 import argparse
-import sys
 import os
-import pandas as pd
-
 # Custom modules.
 import data_normalization as dn
 import dimension_throughput_calc as tp_calc
 import plots
-import utilities
 from statistics import StatisticsAccumulator
 import dimension_data_selection as data_selection
 
@@ -64,11 +59,8 @@ byte_count = normalization_data['byte_count']
 
 data_selection_results = data_selection.run_data_selection_driver(byte_count, aggregated_time, stats_accumulator)
 
-# Step 3: Apply Binning ------------------------------------------
-# TODO Apply binning
-
 # Step 4: Apply DBSCAN -------------------------------------------
-# TODO Update this section to unclude DBSCAN code here!
+# TODO Update this section to unclude DBSCAN code here
 
 # Step 5: Slowstart Filtering ------------------------------------
 # TODO Update to add slow start filtering here

@@ -3,7 +3,7 @@
 node_modules/
 ookla/test-execution/.env
 ookla/test-tool/.env
-
+csvs/
 # Ignore all contents of the ookla-test-results directory
 ookla/test-execution/ookla-test-results/*
 ookla/test-tool/ookla-test-results/*
@@ -12,7 +12,6 @@ ookla/test-tool/ookla-test-results/*
 
 
 # these files arent ready to be tracked yet
-streamlit-app/
 data-analysis/socket_level_throughput.py
 latency/
 output/

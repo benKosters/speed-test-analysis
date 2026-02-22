@@ -29,23 +29,16 @@ const { splitTestTypeUrls } = require('./url-processing')
 const { captureLatencyData, calculateLatencyStatistics, updateAllLatencyStatistics } = require('./filter-latency-data')
 const { processHttpStreamJobIds, processSocketIds } = require('./filter-sockets')
 
-const captureTestMetadata = (netlog_constants) => {
-    os_type = netlog_constants.clientInfo.os_type;
-    chrome_version = netlog_constants.clientInfo.version;
-}
-
 // Immediately invoked anonomous function to read the contents of the Netlog file
 function processNetlogFile(filePath, urlPath) {
     try {
         directory = path.dirname(urlPath);
         const urlJSON = parseJSONFromFile(urlPath);
 
-
         const data = readFileSync(filePath);
         const parsedData = JSON.parse(data);
         const netlog_constants = parsedData.constants;
         const events = parsedData.events;
-        captureTestMetadata(netlog_constants);
 
         const logEvent_ids = {}; //maps Netlog event names to a number (their IDs) - these IDs change for each test, but the names remain the same
         const byte_time_list = []; //For download data
