@@ -23,6 +23,10 @@ const captureTestMetadata = (netlogPath) => {
     const os_type = netlog_constants.clientInfo.os_type;
     const chrome_version = netlog_constants.clientInfo.version;
     const speedtestResultPath = path.join(directory, 'speedtest_result.json');
+    if (!fs.existsSync(speedtestResultPath)) {
+        console.log("speedtest_result.json not found, metadata does not need to be added.");
+        return;
+    }
     try {
         const existingData = parseJSONFromFile(speedtestResultPath);
         existingData.os_type = os_type;
