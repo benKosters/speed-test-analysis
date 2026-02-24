@@ -10,10 +10,8 @@ from .throughput_plots import plot_throughput_rema_separated_by_flows
 
 def run_plot_driver(
     byte_count,
-    throughput_results_2ms,
-    throughput_results_50ms,
-    throughput_by_flows_2ms,
-    throughput_by_flows_50ms,
+    throughput_results,
+    throughput_by_flows,
     source_times,
     begin_time,
     base_path,
@@ -27,8 +25,7 @@ def run_plot_driver(
     print("Plot Generation")
     print("=" * 60)
 
-    df_2ms = pd.DataFrame(throughput_results_2ms)
-    df_50ms = pd.DataFrame(throughput_results_50ms)
+    df = pd.DataFrame(throughput_results)
 
     # === Plot 1: Bytecount Bar Chart ===
     print("  [1/1] Generating bytecount bar chart...")
@@ -47,7 +44,7 @@ def run_plot_driver(
     # Plot 2: Throughput separated by flows (2ms)
     print("  [2/N] Generating throughput by flows plot (2ms)...")
     plot_throughput_rema_separated_by_flows(
-        throughput_by_flows_2ms,
+        throughput_by_flows,
         start_time=0,
         end_time=16,
         source_times=source_times,

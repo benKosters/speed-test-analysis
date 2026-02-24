@@ -32,6 +32,7 @@ parser = argparse.ArgumentParser(description='Process byte time and latency JSON
 parser.add_argument('base_path', type=str, help='Base path to the JSON files')
 parser.add_argument('--save', action='store_true', help='Save plots to plot_images directory')
 parser.add_argument('--bin', type=int, default=1, help='Bin size for aggregating data')
+parser.add_argument('--all-configs', action='store_true', help='Run all 16 configurations (2 dbscan * 2 slow start * 4 bin sizes)')
 args = parser.parse_args()
 
 print(f"Analyzing test: {args.base_path}")
@@ -39,16 +40,11 @@ print(f"Bin size: {args.bin}ms\n")
 
 socket_file = os.path.join(args.base_path, "socketIds.json")
 
-# Store information about the test, to be saved as JSON file
-test_data = {}
-
 # Create to hold all statistics computed throughput data pipeline
 stats_accumulator = StatisticsAccumulator(args.base_path)
-# TODO: move bin_size to config data, it should not be in core data
-stats_accumulator.add('bin_size_ms', args.bin)
-
 
 # Step 1 Data Normalization and Validation-----------------------
+
 # This code only needs to be run once for a test
 normalization_data = dn.run_normalization_driver(args.base_path, stats_accumulator, socket_file=socket_file)
 byte_list = normalization_data['byte_list']
@@ -57,40 +53,65 @@ source_times = normalization_data['source_times']
 begin_time = normalization_data['begin_time']
 byte_count = normalization_data['byte_count']
 
-# All this code below would need to be in a loop to handle all different configurations.
-
 # Step 2: Data Selection -----------------------------------------
 # TODO Data selection, collect these metrics
-# TODO Calculate and extract more metrics
-
 data_selection_results = data_selection.run_data_selection_driver(byte_count, aggregated_time, stats_accumulator)
 
-# Step 4: Apply DBSCAN -------------------------------------------
-# TODO: update if statement to enable/disable DBSCAN
-if True:
-    byte_count = dbscan.run_dbscan_driver(args.base_path, False, stats_accumulator)
+if args.all_configs:
+    print("Computing all 16 configurations.")
+    print("\n" + "="*60)
 
-# Step 5: Slowstart Filtering ------------------------------------
-# TODO Update to add slow start filtering here
+    configs = {
+        'dbscan': [True, False],
+        'slow_start': [True, False],
+        'bin_size': [1, 5, 10, 50]
+    }
+else:
+    print("Running default configuration.")
+    configs = {
+        'dbscan': [False],
+        'slow_start': [False],
+        'bin_size': [args.bin]
+    }
 
-#Step 6: Throughput Calculation ----------------------------------
+print("\n" + "="*60)
+i = 0
+for dbscan_option in configs['dbscan']:
+    for slow_start_option in configs['slow_start']:
+        for bin_size_option in configs['bin_size']:
+            print(f"Running configuration {i}: DBSCAN={dbscan_option}, Slow Start={slow_start_option}, Bin Size={bin_size_option}ms")
+            # Reset byte_count for each configuration
+            byte_count = normalization_data['byte_count']
+            # Create a new statistics accumulator for this configuration
+            config_accumulator = StatisticsAccumulator(args.base_path)
+            config_accumulator.add('dbscan_filter', dbscan_option)
+            config_accumulator.add('slow_start_filter', slow_start_option)
+            config_accumulator.add('bin_size_ms', bin_size_option)
+
+            # Step 4: Apply DBSCAN -------------------------------------------
+            if dbscan_option:
+                byte_count = dbscan.run_dbscan_driver(args.base_path, dbscan_option, config_accumulator)
+
+            # Step 5: Slowstart Filtering ------------------------------------
+            # TODO Update to add slow start filtering here
+            if slow_start_option:
+                pass
+
+            # Step 6: Throughput Calculation ----------------------------------
+            throughput_results = tp_calc.run_throughput_calculation_driver(byte_count, aggregated_time, source_times, begin_time, bin_size_option, stats_accumulator, config_accumulator)
+
+            if args.all_configs:
+                config_accumulator.append_to_csv('configuration_metrics.csv')
+            i += 1
+
 stats_accumulator.print_summary()
-throughput_results = tp_calc.run_throughput_calculation_driver(byte_count, aggregated_time, source_times, begin_time, args.bin, stats_accumulator)
 
 #Step 7: Plotting ------------------------------------------------
-# TODO Update plotting driver
-
-# TODO: Move weighted mean calculation to throughput_driver.py
-# result = tp_calc.calculate_throughput_weighted_points(aggregated_time, byte_count, num_flows, begin_time)
-# weighted_mean = sum(p['throughput'] * p['weight'] for p in result['weighted_points'])
-# print(f"Weighted mean: {weighted_mean:.2f} Mbps")
 
 plots.run_plot_driver(
     byte_count=byte_count,
-    throughput_results_2ms=throughput_results['throughput_results_2ms'],
-    throughput_results_50ms=throughput_results['throughput_results_50ms'],
-    throughput_by_flows_2ms=throughput_results['throughput_by_flows_2ms'],
-    throughput_by_flows_50ms=throughput_results['throughput_by_flows_50ms'],
+    throughput_results=throughput_results['throughput_results'],
+    throughput_by_flows=throughput_results['throughput_by_flows'],
     source_times=source_times,
     begin_time=begin_time,
     base_path=args.base_path,

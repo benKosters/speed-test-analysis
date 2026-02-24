@@ -101,7 +101,7 @@ class StatisticsAccumulator:
         filepath = os.path.join(self.base_path, filename)
         with open(filepath, 'w') as f:
             json.dump(self.summary_stats, f, indent=4)
-        print(f"✓ Saved summary statistics to: {filepath}")
+        print(f"Saved summary statistics to: {filepath}")
         return filepath
 
     def save_detailed(self, detailed_dir: str = "detailed_data"):
@@ -127,6 +127,61 @@ class StatisticsAccumulator:
             print(f"✓ Saved detailed data to: {filepath}")
 
         return saved_files
+
+    def append_to_csv(self, filename: str = "configs_data.csv"):
+        """
+        Append summary statistics as a single row to a CSV file.
+        Creates the file with headers if it doesn't exist.
+        Only works with flat dictionaries (no nested structures).
+
+        Args:
+            filename: Name of the CSV file
+
+        Usage:
+            config_stats = StatisticsAccumulator(base_path)
+            config_stats.add('dbscan_filter', True)
+            config_stats.add('bin_size_ms', 5)
+            config_stats.add('mean_throughput_mbps', 542.3)
+            config_stats.append_to_csv()  # Writes one row to CSV
+        """
+        import pandas as pd
+
+        filepath = os.path.join(self.base_path, filename)
+
+        # Flatten nested dicts if any exist
+        flat_stats = self._flatten_dict(self.summary_stats)
+
+        # Create or append to CSV
+        if os.path.exists(filepath):
+            df = pd.read_csv(filepath)
+            df = pd.concat([df, pd.DataFrame([flat_stats])], ignore_index=True)
+        else:
+            df = pd.DataFrame([flat_stats])
+
+        df.to_csv(filepath, index=False)
+        print(f"Appended statistics to: {filepath}")
+        return filepath
+
+    def _flatten_dict(self, d: Dict, parent_key: str = '', sep: str = '_') -> Dict:
+        """
+        Flatten a nested dictionary into a single-level dictionary.
+
+        Args:
+            d: Dictionary to flatten
+            parent_key: Key prefix for nested items
+            sep: Separator between parent and child keys
+
+        Returns:
+            Flattened dictionary
+        """
+        items = []
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(self._flatten_dict(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
 
     def save_all(self):
         """Save both summary and detailed statistics"""

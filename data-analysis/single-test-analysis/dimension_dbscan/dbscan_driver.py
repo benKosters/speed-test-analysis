@@ -13,28 +13,55 @@ import sys
 
 from dimension_throughput_calc import throughput_calculation as tp_calc
 
-def run_dbscan_driver(folder: str, generate_plot: bool, stats_accumulator):
+def run_dbscan_driver(folder: str, generate_plot: bool, config_accumulator):
     print(f"\n ARTIFACT FILTERING WITH DBSCAN")
     df = process_bytecount(folder)
     print(df.head())
+
+    num_total_points = len(df)
+    num_artifact_points = df["artifact"].sum()
+    num_points_remaining = num_total_points - num_artifact_points
+
     # Plot artifacts
     if generate_plot:
         plot_dbscan(folder, df)
+
     # print artifact data points
     print(f"\nDBSCAN Artifact Points:")
     print(df[df["artifact"]][["time", "delta_time", "throughput", "byte_transferred"]].head(10))
-    # return only data that's not artifact
-    df = df[~df["artifact"]]
-    # Turn it back to json.
-    df = df.drop(columns=["artifact", "throughput", "delta_time"], errors="ignore")
+
+    # Filter out artifacts
+    df_filtered = df[~df["artifact"]].copy()
+
+    # Calculate time metrics before dropping columns
+    if num_total_points > 0:
+        total_time_ms = df['time'].astype(int).max() - df['time'].astype(int).min()
+        filtered_time_ms = df_filtered['time'].astype(int).max() - df_filtered['time'].astype(int).min() if len(df_filtered) > 0 else 0
+        time_removed_ms = total_time_ms - filtered_time_ms
+        percent_time_filtered = (time_removed_ms / total_time_ms * 100) if total_time_ms > 0 else 0.0
+    else:
+        time_removed_ms = 0.0
+        percent_time_filtered = 0.0
+
+    # Add metrics to config_accumulator
+    config_accumulator.add('num_artifact_points', int(num_artifact_points))
+    config_accumulator.add('num_points_after_dbscan', int(num_points_remaining))
+    config_accumulator.add('percent_artifact_points', float(num_artifact_points / num_total_points * 100) if num_total_points > 0 else 0.0)
+    config_accumulator.add('time_removed_by_dbscan_ms', float(time_removed_ms))
+    config_accumulator.add('percent_time_removed_by_dbscan', float(percent_time_filtered))
+
+    # Turn it back to json - drop extra columns
+    df_filtered = df_filtered.drop(columns=["artifact", "throughput", "delta_time"], errors="ignore")
+
     # Build JSON structure
     result = {
         int(row["time"]): [
             int(row["byte_transferred"]),
             int(row["flows"])
         ]
-        for _, row in df.iterrows()
+        for _, row in df_filtered.iterrows()
     }
+
     return result
 
 def estimate_eps_pre_wall(X, dim=2):
