@@ -1,79 +1,87 @@
 def run_data_selection_driver(byte_count, aggregated_time, stats_accumulator):
     """
+    Analyze data selection patterns: compute metrics for max flows vs non-max flows.
+    All metrics are added to stats_accumulator as flat (non-nested) entries.
     """
     print("\n" + "=" * 60)
     print("Data selection driver")
 
     # Find maximum number of flows
-    num_flows = max(byte_count[timestamp][1] for timestamp in byte_count)
+    num_flows = stats_accumulator.get('num_sockets')
 
-    # Calculate percentage of time each flow count contributes
-    flow_distribution = {}
-    for i in range(1, num_flows + 1):
-        count = sum(1 for ts in byte_count if byte_count[ts][1] == i)
-        flow_distribution[i] = count
-
+    # === Compute Total Metrics ===
     total_points = len(byte_count)
-    formatted_flows = {
-        f"{i}_flows": {
-            "count": flow_distribution[i],
-            "percentage_of_points": (flow_distribution[i] / total_points * 100) if total_points > 0 else 0,
-            "percentage_of_time": (flow_distribution[i] / total_points * 100) if total_points > 0 else 0
-        }
-        for i in range(1, num_flows + 1)
-    }
-
-    max_flow_percentage = formatted_flows.get(f"{num_flows}_flows", {}).get("percentage_of_points", 0)
-
-    # Add flow contribution statistics
-    stats_accumulator.add('data_selection.flow_contribution', {
-        'max_flows': num_flows,
-        'max_flow_percent_points': max_flow_percentage,
-        'distribution': formatted_flows
-    })
-
-    # === Compute Selection Impact Metrics ===
-    print("  [2/2] Computing selection impact metrics...")
-
-    # Metrics for max_flows_only selection
-    max_flow_points = flow_distribution[num_flows]
-    max_flow_bytes = sum(byte_count[ts][0] for ts in byte_count if byte_count[ts][1] == num_flows)
     total_bytes = sum(byte_count[ts][0] for ts in byte_count)
 
-    # Calculate time duration (first to last timestamp)
     if aggregated_time:
         total_duration_ms = aggregated_time[-1] - aggregated_time[0]
+    else:
+        total_duration_ms = 0
+
+    # === Compute Max Flow Metrics ===
+    # Count points where all flows are contributing
+    num_points_all_flows_contributing = sum(1 for ts in byte_count if byte_count[ts][1] == num_flows)
+
+    # Sum bytes where all flows are contributing
+    num_bytes_all_flows_contributing = sum(byte_count[ts][0] for ts in byte_count if byte_count[ts][1] == num_flows)
+
+    # Calculate time duration where all flows are contributing
+    if aggregated_time:
         max_flow_timestamps = [ts for ts in byte_count if byte_count[ts][1] == num_flows]
         if max_flow_timestamps:
-            max_flow_duration_ms = sum(
+            time_all_flows_contributing = sum(
                 aggregated_time[i+1] - aggregated_time[i]
                 for i in range(len(aggregated_time)-1)
                 if aggregated_time[i] in max_flow_timestamps
             )
         else:
-            max_flow_duration_ms = 0
+            time_all_flows_contributing = 0
     else:
-        total_duration_ms = 0
-        max_flow_duration_ms = 0
+        time_all_flows_contributing = 0
 
-    # Calculate exclusion percentages
-    percent_bytes_excluded = ((total_bytes - max_flow_bytes) / total_bytes * 100) if total_bytes > 0 else 0
-    percent_time_excluded = ((total_duration_ms - max_flow_duration_ms) / total_duration_ms * 100) if total_duration_ms > 0 else 0
-    percent_points_excluded = ((total_points - max_flow_points) / total_points * 100) if total_points > 0 else 0
+    # === Compute Non-Max Flow Metrics ===
+    num_points_not_max_flows = total_points - num_points_all_flows_contributing
+    num_bytes_not_max_flows = total_bytes - num_bytes_all_flows_contributing
+    time_not_max_flows = total_duration_ms - time_all_flows_contributing
 
-    stats_accumulator.add('data_selection.impact_metrics', {
-        'total_points': total_points,
+    # === Compute Percentages ===
+    percent_points_all_flows_contributing = (num_points_all_flows_contributing / total_points * 100) if total_points > 0 else 0
+    percent_points_not_max_flows = (num_points_not_max_flows / total_points * 100) if total_points > 0 else 0
+
+    percent_bytes_all_flows_contributing = (num_bytes_all_flows_contributing / total_bytes * 100) if total_bytes > 0 else 0
+    percent_bytes_not_max_flows = (num_bytes_not_max_flows / total_bytes * 100) if total_bytes > 0 else 0
+
+    percent_time_all_flows_contributing = (time_all_flows_contributing / total_duration_ms * 100) if total_duration_ms > 0 else 0
+    percent_time_not_max_flows = (time_not_max_flows / total_duration_ms * 100) if total_duration_ms > 0 else 0
+
+    stats_accumulator.add_bulk({
+        # Total metrics
+        'num_points': total_points,
         'total_bytes': total_bytes,
         'total_duration_ms': total_duration_ms,
-        'max_flow_points': max_flow_points,
-        'max_flow_bytes': max_flow_bytes,
-        'max_flow_duration_ms': max_flow_duration_ms,
-        'percent_points_excluded_if_max_flows_only': percent_points_excluded,
-        'percent_bytes_excluded_if_max_flows_only': percent_bytes_excluded,
-        'percent_time_excluded_if_max_flows_only': percent_time_excluded
+
+        # Max flows metrics (absolute values)
+        'num_points_all_flows_contributing': num_points_all_flows_contributing,
+        'num_bytes_all_flows_contributing': num_bytes_all_flows_contributing,
+        'time_all_flows_contributing': time_all_flows_contributing,
+
+        # Non-max flows metrics (absolute values)
+        'num_points_not_max_flows': num_points_not_max_flows,
+        'num_bytes_not_max_flows': num_bytes_not_max_flows,
+        'time_not_max_flows': time_not_max_flows,
+
+        # Max flows percentages
+        'percent_points_all_flows_contributing': percent_points_all_flows_contributing,
+        'percent_bytes_all_flows_contributing': percent_bytes_all_flows_contributing,
+        'percent_time_all_flows_contributing': percent_time_all_flows_contributing,
+
+        # Non-max flows percentages
+        'percent_points_not_max_flows': percent_points_not_max_flows,
+        'percent_bytes_not_max_flows': percent_bytes_not_max_flows,
+        'percent_time_not_max_flows': percent_time_not_max_flows
     })
 
-    # Filter to only include points where all flows contribute
+    # === Filter to Selected Data (Max Flows Only) ===
     selected_byte_count = {
         ts: byte_count[ts]
         for ts in byte_count
@@ -81,9 +89,8 @@ def run_data_selection_driver(byte_count, aggregated_time, stats_accumulator):
     }
     selected_aggregated_time = [ts for ts in aggregated_time if ts in selected_byte_count]
 
-    print(f"  ✓ Selected {len(selected_byte_count)}/{total_points} points (max flows only)")
-    stats_accumulator.add('data_selection.points_selected', len(selected_byte_count))
-    stats_accumulator.add('data_selection.points_excluded', total_points - len(selected_byte_count))
+    print(f"Selected {len(selected_byte_count)}/{total_points} points (max flows only)")
+    print(f"Max flows contribute {percent_points_all_flows_contributing:.1f}% of points, {percent_bytes_all_flows_contributing:.1f}% of bytes, {percent_time_all_flows_contributing:.1f}% of time")
 
     print("=" * 60)
 

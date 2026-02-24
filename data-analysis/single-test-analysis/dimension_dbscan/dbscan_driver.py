@@ -11,52 +11,31 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import NearestNeighbors
 import sys
 
-import throughput_calculation as tp_calc
+from dimension_throughput_calc import throughput_calculation as tp_calc
 
-# ---------------------------
-# Annotate DataFrame
-# ---------------------------
-def annotate_bytecount(folder: str):
-    df = load_bytecount_json(folder)
-    # df["slow_start"] = filter_slow_start(df)
-    df["artifact"]   = detect_artifacts_dbscan(df)
-    
-    # Remove first item where time == 0.0 and flows == 0
-    mask = (df["time"] == 0.0) & (df["flows"] == 0)
-    if mask.any():
-        first_idx = mask.idxmax()
-        df = df.drop(first_idx).reset_index(drop=True)
-    
-    df_out = df.set_index("time")
-    df_path = Path(folder) / "annotated_bytecount.json"
-    df_out.to_json(df_path, orient="index", indent=2)
-    print(f"Annotated file saved to: {df_path}")
-    return df
-
-
-# ---------------------------
-# Slow-start detection -- not used currently.
-# ---------------------------
-
-def filter_slow_start(df):
-    df = df.copy()
-
-    # windowed delivery rate (less noisy than instantaneous)
-    w = 5
-    rate = df["byte_transferred"].rolling(w).sum() / df["time"].diff(w)
-    rate = rate.dropna()
-
-    # find first point where variance drops sharply
-    rolling_var = rate.rolling(5).var()
-
-    # change point = first local minimum of variance
-    cp_idx = rolling_var.idxmin()
-
-    return df.index <= cp_idx
-
-# ---------------------------
-# Artifact detection
-# ---------------------------
+def run_dbscan_driver(folder: str, generate_plot: bool, stats_accumulator):
+    print(f"\n ARTIFACT FILTERING WITH DBSCAN")
+    df = process_bytecount(folder)
+    print(df.head())
+    # Plot artifacts
+    if generate_plot:
+        plot_dbscan(folder, df)
+    # print artifact data points
+    print(f"\nDBSCAN Artifact Points:")
+    print(df[df["artifact"]][["time", "delta_time", "throughput", "byte_transferred"]].head(10))
+    # return only data that's not artifact
+    df = df[~df["artifact"]]
+    # Turn it back to json.
+    df = df.drop(columns=["artifact", "throughput", "delta_time"], errors="ignore")
+    # Build JSON structure
+    result = {
+        int(row["time"]): [
+            int(row["byte_transferred"]),
+            int(row["flows"])
+        ]
+        for _, row in df.iterrows()
+    }
+    return result
 
 def estimate_eps_pre_wall(X, dim=2):
     # Heuristic:
@@ -79,7 +58,7 @@ def estimate_eps_pre_wall(X, dim=2):
 
 def detect_artifacts_dbscan(df):
     """
-    DBSCAN-based artifact detection in (time, throughput) space.
+    DBSCAN-based artifact detection in (time, byte_transferred) space.
     Noise points (label = -1) are considered artifacts.
     """
     X = df[["time", "throughput"]].values
@@ -88,15 +67,29 @@ def detect_artifacts_dbscan(df):
     plot_knn_distance(X, dim=2, eps=eps, title="DBSCAN k-NN Distance for Artifact Detection")
     labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(X)
 
-    return labels == -1
+    # Treat the first point as non-artifact to avoid removing the initial measurement.
+    artifact_mask = (labels == -1)
+    if artifact_mask.size > 0:
+        artifact_mask[0] = False
 
-# CDF
+    n_artifacts = int(artifact_mask.sum())
+    pct = (n_artifacts / len(df) * 100) if len(df) > 0 else 0.0
+    print(f"artifact points detected: {n_artifacts} out of {len(df)}, percentage: {pct:.2f}%   ")
+    return artifact_mask
 
-def cdf(series):
-    """Return sorted X values and their CDF (fraction ≤ x)."""
-    data = np.sort(series.dropna().values)
-    y = np.arange(1, len(data) + 1) / len(data)
-    return data, y
+def process_bytecount(folder: str):
+    df = load_bytecount_json(folder)
+    df = bytecount_to_throughput(df)
+    # DBSCAN artifact detection
+    df["artifact"] = detect_artifacts_dbscan(df)
+    return df
+
+def bytecount_to_throughput(df):
+    df = df.copy()
+    # delta_time = time difference between consecutive rows
+    df["delta_time"] = df["time"].astype(int).diff().fillna(0)
+    df["throughput"] = df["byte_transferred"] / (df["delta_time"] + 1e-6)  # avoid division by zero
+    return df
 
 # Load Json and build DataFrame
 
@@ -118,24 +111,6 @@ def load_bytecount_json(folder: str):
         .reset_index()
         .rename(columns={"index": "time"})
     )
-
-    # sort by time
-    df["time"] = df["time"].astype(float)
-    df = df.sort_values("time").reset_index(drop=True)
-
-    # normalize time to start at 0
-    start_time = df["time"].iloc[0]
-    df["time"] = df["time"] - start_time
-
-    # compute delta time
-    df["delta_time"] = df["time"].diff()
-
-    # handle first row safely
-    df.loc[0, "delta_time"] = 1.0
-
-    # compute throughput
-    df["throughput"] = df["byte_transferred"] / df["delta_time"]
-
     return df
 
 
@@ -168,7 +143,7 @@ def plot_knn_distance(
     nbrs = NearestNeighbors(n_neighbors=k)
     nbrs.fit(X)
     distances, _ = nbrs.kneighbors(X)
-    
+
     k_distances = np.sort(distances[:, -1])
 
     plt.figure(figsize=figsize)
@@ -192,17 +167,17 @@ def plot_knn_distance(
 
 
 def plot_dbscan(folder, df):
-    df = df.copy()
-    mask = detect_artifacts_dbscan(df)
-
+    mask = df["artifact"]
+    t0 = df["time"].iloc[0]
+    time_normalized = pd.to_numeric(df["time"]) - int(t0)
     out = Path(folder) / "plot_images"
     out_file = out / "dbscan_artifacts.png"
 
     plt.figure(figsize=(12, 7))
     # convert throughput to bytes/ms for better scaling (multiply by 8/1000 = devide by 125)
-    plt.scatter(df["time"], df["throughput"]/125, s=20, c="black", alpha=0.6)
+    plt.scatter(time_normalized, df["throughput"]/125, s=20, c="black", alpha=0.6)
     plt.scatter(
-        df.loc[mask, "time"],
+        time_normalized[mask],
         df.loc[mask, "throughput"]/125,
         s=25,
         c="red",
@@ -219,317 +194,3 @@ def plot_dbscan(folder, df):
     plt.savefig(out_file, dpi=300, bbox_inches="tight")
     plt.close()
 
-
-
-def plot_filter_cdf(folder: str, df):
-    """
-    Create two CDF curves:
-      (1) Unfiltered data (both slow_start=False AND artifact=False)
-      (2) Full dataset (filtered data)
-    """
-
-    # ---- Build datasets ----
-    unfiltered = df[(df["slow_start"] == False) & (df["artifact"] == False)]["throughput"]
-    filtered = df[(df["slow_start"] != False) | (df["artifact"] != False)]["throughput"]
-    #full = df["throughput"]
-
-    # Sort them
-    unfiltered_sorted = np.sort(unfiltered)
-    filtered_sorted = np.sort(filtered)
-
-    # Y-values for CDF
-    unfiltered_cdf = np.arange(1, len(unfiltered_sorted)+1) / len(unfiltered_sorted)
-    filtered_cdf = np.arange(1, len(filtered_sorted)+1) / len(filtered_sorted)
-
-    # ---- Plot ----
-    plt.figure(figsize=(10, 6))
-
-    # full dataset first
-    plt.plot(filtered_sorted, filtered_cdf, linewidth=2, alpha=0.8, label="CDF (Slow Start + Artifact Points)")
-
-    # unfiltered dataset
-    plt.plot(unfiltered_sorted, unfiltered_cdf, linewidth=2, alpha=0.8, label="CDF (No Slow Start / No Artifact)")
-    title_prefix = Path(folder).parents[0].name
-    plt.title(f"{title_prefix} — Filtered vs Unfiltered CDF", fontsize=16)
-    plt.xlabel("Throughput", fontsize=14)
-    plt.ylabel("CDF", fontsize=14)
-    plt.grid(alpha=0.3)
-    plt.legend(fontsize=12)
-
-    plt.xlim(left=0)
-
-    # ---- Save ----
-    out = Path(folder) / "plot_images"
-    out_file = out / "cdf_throughput_overlay.png"
-    if out_file.exists():
-        print(f"Skipping existing plot: {out_file}")
-        return
-
-    out.mkdir(exist_ok=True)
-
-    plt.savefig(out_file, dpi=300, bbox_inches="tight")
-    plt.close()
-
-def plot_maxflow_cdf(folder: str, df):
-    out = Path(folder) / "plot_images"
-    out_file = out / "cdf_maxflow_vs_nonmaxflow.png"
-    if out_file.exists():
-        print(f"Skipping existing plot: {out_file}")
-        return
-
-    title_prefix = Path(folder).parents[0].name
-
-    max_flow = df["flows"].max()
-
-    max_flow_pts = df[df["flows"] == max_flow]["throughput"]
-    non_max_flow_pts = df[df["flows"] != max_flow]["throughput"]
-
-    plt.figure(figsize=(10, 6))
-
-    # max flow CDF
-    x_m, y_m = cdf(max_flow_pts)
-    plt.plot(x_m, y_m, label=f"Flow = {max_flow} (Max)", linewidth=2)
-
-    # non-max CDF
-    if len(non_max_flow_pts) > 0:
-        x_n, y_n = cdf(non_max_flow_pts)
-        plt.plot(x_n, y_n, label="Non-max Flows", linewidth=2)
-
-    plt.xlabel("Throughput")
-    plt.ylabel("CDF")
-    plt.title(f"{title_prefix} — Max Flow vs Non-Max Flow CDF")
-    plt.grid(alpha=0.3)
-    plt.legend()
-
-    out.mkdir(exist_ok=True)
-    plt.savefig(out_file, dpi=300, bbox_inches="tight")
-    plt.close()
-
-
-
-def plot_binned_with_artifacts(folder: str, df, bin_size, byte_transferred="byte_transferred", time_col="time", delta_col="delta_time", use_max=False):
-    """
-    Plot binned throughput data with artifacts highlighted in red.
-    
-    Parameters
-    ----------
-    folder : str
-        Output folder path
-    df : pd.DataFrame
-        Input dataframe
-    bin_size : int
-        Bin size in ms (2 or 10)
-    use_max : bool
-        If True, use max throughput in bin. If False, use bytes/duration (default)
-    """
-    print(f"\n📊 Creating {bin_size}ms binned plot with artifacts...")
-    
-    # Debug: Check input data
-    print(f"\n  INPUT DATA:")
-    print(f"  Number of rows: {len(df)}")
-    print(f"  Total bytes (sum): {df[byte_transferred].sum():.0f}")
-    print(f"  Total delta_time (sum): {df[delta_col].sum():.0f}")
-    print(f"  Time range: {df[time_col].min():.1f} to {df[time_col].max():.1f}")
-    
-    # Expand intervals to 1ms resolution
-    expanded_rows = []
-    for idx, row in df.iterrows():
-        t_end = int(row[time_col])
-        delta = int(row[delta_col])
-        bytes_val = row[byte_transferred]
-        t_start = t_end - delta
-        
-        # Distribute bytes uniformly across the interval
-        bytes_per_ms = bytes_val / delta if delta > 0 else 0
-        
-        for t in range(t_start + 1, t_end + 1):
-            expanded_rows.append({
-                "time": t,
-                byte_transferred: bytes_per_ms,
-                "duration": 1,
-                "throughput_1ms": bytes_per_ms  # Store 1ms throughput for max calculation
-            })
-    
-    expanded_df = pd.DataFrame(expanded_rows)
-    
-    print(f"\n  EXPANDED DATA:")
-    print(f"  Expanded to {len(expanded_df)} 1ms samples")
-    print(f"  Total bytes in expanded: {expanded_df[byte_transferred].sum():.0f}")
-    print(f"  Total duration in expanded: {expanded_df['duration'].sum():.0f} ms")
-    
-    # Assign bins
-    expanded_df["bin"] = (expanded_df["time"] // bin_size) * bin_size
-    
-    # Aggregate
-    if use_max:
-        binned_df = (
-            expanded_df
-            .groupby("bin")
-            .agg({
-                byte_transferred: "sum",
-                "duration": "sum",
-                "throughput_1ms": "max"  # Take max 1ms throughput in the bin
-            })
-            .reset_index()
-            .rename(columns={"bin": "time", "throughput_1ms": "throughput"})
-        )
-    else:
-        binned_df = (
-            expanded_df
-            .groupby("bin")
-            .agg({
-                byte_transferred: "sum",
-                "duration": "sum"
-            })
-            .reset_index()
-            .rename(columns={"bin": "time"})
-        )
-        # Calculate throughput for each bin (bytes/duration)
-        binned_df["throughput"] = binned_df[byte_transferred] / binned_df["duration"]
-    
-    print(f"\n  BINNED DATA ({bin_size}ms, {'MAX' if use_max else 'AVG'} method):")
-    print(f"  After binning: {len(binned_df)} bins")
-    print(f"  Total bytes in binned: {binned_df[byte_transferred].sum():.0f}")
-    print(f"  Total duration in binned: {binned_df['duration'].sum():.0f} ms")
-    
-    print(f"\n  THROUGHPUT CALCULATIONS (BEFORE FILTERING):")
-    # Convert throughput from bytes/ms to Magabits per second (Mbps) for better interpretability (1 byte/ms = 1/125 Mbps)
-    print(f"  Min throughput: {binned_df['throughput'].min():.2f} bytes/ms = {binned_df['throughput'].min()/125:.2f} Mbps")
-    print(f"  Max throughput: {binned_df['throughput'].max():.2f} bytes/ms = {binned_df['throughput'].max()/125:.2f} Mbps")
-    print(f"  Mean throughput: {binned_df['throughput'].mean():.2f} bytes/ms = {binned_df['throughput'].mean()/125:.2f} Mbps")
-    print(f"  Overall throughput: {binned_df[byte_transferred].sum() / binned_df['duration'].sum():.2f} bytes/ms = {binned_df[byte_transferred].sum() / binned_df['duration'].sum() / 125:.2f} Mbps")
-    
-    # Detect artifacts on binned data
-    artifacts = detect_artifacts_dbscan(binned_df)
-    
-    # Filter out artifacts
-    filtered_binned_df = binned_df[~artifacts].copy()
-    
-    print(f"\n  ARTIFACT DETECTION:")
-    print(f"  Artifacts detected: {artifacts.sum()}")
-    print(f"  Bins after filtering: {len(filtered_binned_df)}")
-    
-    print(f"\n  THROUGHPUT CALCULATIONS (AFTER FILTERING):")
-    if len(filtered_binned_df) > 0:
-        # Convert throughput from bytes/ms to Magabits per second (Mbps) for better interpretability (1 byte/ms = 1/125 Mbps)
-        print(f"  Min throughput: {filtered_binned_df['throughput'].min():.2f} bytes/ms = {filtered_binned_df['throughput'].min()/125:.2f} Mbps")
-        print(f"  Max throughput: {filtered_binned_df['throughput'].max():.2f} bytes/ms = {filtered_binned_df['throughput'].max()/125:.2f} Mbps")
-        print(f"  Mean throughput: {filtered_binned_df['throughput'].mean():.2f} bytes/ms = {filtered_binned_df['throughput'].mean()/125:.2f} Mbps")
-        print(f"  Overall throughput: {filtered_binned_df[byte_transferred].sum() / filtered_binned_df['duration'].sum():.2f} bytes/ms = {filtered_binned_df[byte_transferred].sum() / filtered_binned_df['duration'].sum() / 125:.2f} Mbps")
-    else:
-        print(f"  WARNING: No data remaining after filtering!")
-    
-    # Create plot
-    plt.figure(figsize=(12, 7))
-    
-    # Plot non-artifact bins in black
-    non_artifact_df = binned_df[~artifacts]
-    plt.bar(
-        non_artifact_df["time"],
-        # Convert throughput from bytes/ms to Magabits per second (Mbps) for better interpretability (1 byte/ms = 1/125 Mbps)
-        non_artifact_df["throughput"] / 125,
-        width=bin_size,
-        align="edge",
-        alpha=0.8,
-        color="black",
-        label="Normal Throughput"
-    )
-    
-    # Plot artifact bins in red
-    artifact_df = binned_df[artifacts]
-    if len(artifact_df) > 0:
-        plt.bar(
-            artifact_df["time"],
-            # Convert throughput from bytes/ms to Magabits per second (Mbps) for better interpretability (1 byte/ms = 1/125 Mbps)
-            artifact_df["throughput"] / 125,
-            width=bin_size,
-            align="edge",
-            alpha=0.8,
-            color="red",
-            label="DBSCAN Artifact"
-        )
-    
-    method_str = " (Max)" if use_max else ""
-    plt.title(f"Throughput with {bin_size}ms Binning{method_str} - Artifacts Highlighted", fontsize=16)
-    plt.xlabel("Time (ms)", fontsize=14)
-    plt.ylabel("Throughput (bytes/ms)", fontsize=14)
-    plt.legend(fontsize=12)
-    plt.grid(alpha=0.3)
-    plt.xlim(left=0)
-    plt.ylim(bottom=0)
-    
-    # Save plot
-    out = Path(folder) / "plot_images"
-    out.mkdir(exist_ok=True)
-    method_suffix = "_max" if use_max else ""
-    out_file = out / f"throughput_{bin_size}ms_binning{method_suffix}_artifacts.png"
-    
-    plt.savefig(out_file, dpi=300, bbox_inches="tight")
-    plt.close()
-    
-    print(f"\n  OUTPUT:")
-    print(f"  Saved: {out_file}")
-    print(f"  Total bins: {len(binned_df)}")
-    print(f"  Artifact bins: {artifacts.sum()}")
-    print(f"  Normal bins: {(~artifacts).sum()}")
-    
-    # Return the filtered throughput for summary
-    if len(filtered_binned_df) > 0:
-        # Convert throughput from bytes/ms to Magabits per second (Mbps) for better interpretability (1 byte/ms = 1/125 Mbps)
-        filtered_throughput_mbps = filtered_binned_df[byte_transferred].sum() / filtered_binned_df['duration'].sum() / 125
-    else:
-        filtered_throughput_mbps = 0
-    
-    return filtered_throughput_mbps
-
-
-# ---------------------------
-# main()
-# ---------------------------
-def main():
-    parser = argparse.ArgumentParser(
-        description="Analyze byte_count.json and highlight slow-start + artifacts."
-    )
-    parser.add_argument(
-        "folder",
-        type=str,
-        help="Folder containing byte_count.json"
-    )
-
-    args = parser.parse_args()
-
-    print(f"\n📁 Loading data from: {args.folder}")
-
-    df = annotate_bytecount(args.folder)
-    
-    # 1ms binning plot
-    plot_binned_with_artifacts(folder=args.folder, df=df, bin_size=1)
-
-    # 2ms binning plot
-    plot_binned_with_artifacts(folder=args.folder, df=df, bin_size=2)
-
-    # 5ms binning plot
-    plot_binned_with_artifacts(folder=args.folder, df=df, bin_size=5)
-    
-    # 10ms binning plot
-    plot_binned_with_artifacts(folder=args.folder, df=df, bin_size=10)
-
-    print("\n🔍 Annotated DataFrame preview:")
-    print(df.head())
-
-    parent = Path(args.folder).parent.name
-
-    # Only run when this is a **multi** test, not a **single** test
-    if "multi" in parent:
-        print("\n📈 Generating Max Flow vs Non-Max Flow CDF plot...")
-        plot_maxflow_cdf(args.folder, df)
-    else:
-        print(f"Skipping CDF for single-flow folder: {parent}")
-   
-    print("\n✨ Done.")
-
-
-
-# Run main() only if executed directly
-if __name__ == "__main__":
-    main()

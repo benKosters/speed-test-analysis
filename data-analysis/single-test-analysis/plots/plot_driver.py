@@ -6,6 +6,7 @@ This driver coordinates the creation of all plots for a single test analysis.
 import os
 import pandas as pd
 from .plot_bar_bytecount import create_bytecount_bar_chart
+from .throughput_plots import plot_throughput_rema_separated_by_flows
 
 def run_plot_driver(
     byte_count,
@@ -44,18 +45,18 @@ def run_plot_driver(
     # === Additional plots (currently commented out, uncomment when needed) ===
 
     # Plot 2: Throughput separated by flows (2ms)
-    # print("  [2/N] Generating throughput by flows plot (2ms)...")
-    # plot_throughput_rema_separated_by_flows(
-    #     throughput_by_flows_2ms,
-    #     start_time=0,
-    #     end_time=16,
-    #     source_times=source_times,
-    #     begin_time=begin_time,
-    #     title=None,
-    #     scatter=True,
-    #     save=True,
-    #     base_path=base_path
-    # )
+    print("  [2/N] Generating throughput by flows plot (2ms)...")
+    plot_throughput_rema_separated_by_flows(
+        throughput_by_flows_2ms,
+        start_time=0,
+        end_time=16,
+        source_times=source_times,
+        begin_time=begin_time,
+        title=None,
+        scatter=True,
+        save=True,
+        base_path=base_path
+    )
 
     # Plot 3: Throughput separated by flows and sockets (2ms)
     # print("  [3/N] Generating throughput by flows and sockets plot (2ms)...")

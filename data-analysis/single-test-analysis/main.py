@@ -25,6 +25,7 @@ import dimension_throughput_calc as tp_calc
 import plots
 from statistics import StatisticsAccumulator
 import dimension_data_selection as data_selection
+import dimension_dbscan as dbscan
 
 # Set up argument parsing to allow a base path as input
 parser = argparse.ArgumentParser(description='Process byte time and latency JSON files.')
@@ -43,16 +44,21 @@ test_data = {}
 
 # Create to hold all statistics computed throughput data pipeline
 stats_accumulator = StatisticsAccumulator(args.base_path)
+# TODO: move bin_size to config data, it should not be in core data
 stats_accumulator.add('bin_size_ms', args.bin)
 
 
 # Step 1 Data Normalization and Validation-----------------------
+# This code only needs to be run once for a test
 normalization_data = dn.run_normalization_driver(args.base_path, stats_accumulator, socket_file=socket_file)
 byte_list = normalization_data['byte_list']
 aggregated_time = normalization_data['aggregated_time']
 source_times = normalization_data['source_times']
 begin_time = normalization_data['begin_time']
 byte_count = normalization_data['byte_count']
+
+# All this code below would need to be in a loop to handle all different configurations.
+
 # Step 2: Data Selection -----------------------------------------
 # TODO Data selection, collect these metrics
 # TODO Calculate and extract more metrics
@@ -60,7 +66,9 @@ byte_count = normalization_data['byte_count']
 data_selection_results = data_selection.run_data_selection_driver(byte_count, aggregated_time, stats_accumulator)
 
 # Step 4: Apply DBSCAN -------------------------------------------
-# TODO Update this section to unclude DBSCAN code here
+# TODO: update if statement to enable/disable DBSCAN
+if True:
+    byte_count = dbscan.run_dbscan_driver(args.base_path, False, stats_accumulator)
 
 # Step 5: Slowstart Filtering ------------------------------------
 # TODO Update to add slow start filtering here
