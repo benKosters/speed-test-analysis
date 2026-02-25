@@ -19,7 +19,6 @@ const captureTestMetadata = (netlogPath) => {
     directory = path.dirname(netlogPath);
     const data = JSON.parse(readFileSync(netlogPath));
     const netlog_constants = data.constants;
-
     const os_type = netlog_constants.clientInfo.os_type;
     const chrome_version = netlog_constants.clientInfo.version;
     const speedtestResultPath = path.join(directory, 'speedtest_result.json');
@@ -275,27 +274,39 @@ function separateHelloUrlsByTiming(url_list) {
  * @returns {object} Object containing paths to created URL files
  */
 function filterUrls(netlogFilePath) {
+
     checkFilePath(netlogFilePath);
     const netlogDir = path.dirname(netlogFilePath);
-    captureTestMetadata(netlogFilePath);
-
-    let url_list = collectUrlsFromNetlog(netlogFilePath);
-    let latency_urls = separateHelloUrlsByTiming(url_list);
 
     // Define paths for download and upload directories
     const downloadDir = path.join(netlogDir, 'download');
     const uploadDir = path.join(netlogDir, 'upload');
-    //Define paths for the output files
+    // URL files in each download/upload directory
     const downloadUrlsPath = path.join(downloadDir, 'download_urls.json');
     const uploadUrlsPath = path.join(uploadDir, 'upload_urls.json');
 
     // Check if the output directories exist or create them
     const downloadDirExists = ensureDirectoryExists(downloadDir);
     const uploadDirExists = ensureDirectoryExists(uploadDir);
-    // Check if output files already exist
     const downloadUrlsExists = fs.existsSync(downloadUrlsPath);
     const uploadUrlsExists = fs.existsSync(uploadUrlsPath);
 
+    if (downloadDirExists && uploadDirExists && downloadUrlsExists && uploadUrlsExists) {
+        console.log('Skipping filtering: URLs have already been filtered.');
+        return {
+            downloadDir: downloadDir,
+            uploadDir: uploadDir,
+            downloadUrlsPath: downloadUrlsPath,
+            uploadUrlsPath: uploadUrlsPath
+        }
+    }
+
+
+    captureTestMetadata(netlogFilePath);
+    // These steps are not very efficent
+    // TODO: Make these functions faster?
+    let url_list = collectUrlsFromNetlog(netlogFilePath);
+    let latency_urls = separateHelloUrlsByTiming(url_list);
 
     // Print summary of found URLs
     console.log("Number of download URLs found:", url_list.download.length);
@@ -308,18 +319,6 @@ function filterUrls(netlogFilePath) {
     console.log("Upload test latency URLs:");
     console.log("  Unloaded:", latency_urls.upload.unload.length);
     console.log("  Loaded:", latency_urls.upload.load.length);
-
-    // Exit if both files already exist
-    if (downloadUrlsExists && uploadUrlsExists) {
-        // console.log(`Both ${downloadUrlsPath} and ${uploadUrlsPath} already exist.`);
-        console.log('URL files already exist. Skipping creation.');
-        return {
-            downloadDir: downloadDir,
-            uploadDir: uploadDir,
-            downloadUrlsPath: downloadUrlsPath,
-            uploadUrlsPath: uploadUrlsPath
-        }
-    }
 
     let download_url_list = {
         download: url_list.download.map(pair => pair[0]),

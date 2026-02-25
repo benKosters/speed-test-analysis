@@ -90,7 +90,6 @@ function main() {
         console.log('\nStep 1: Filtering URLs from netlog.');
         console.log('='.repeat(60));
         const urlResults = filterUrls(netlogFilePath);
-        console.log('URL filtering complete.');
 
         downloadUrlsPath = urlResults.downloadUrlsPath;
         uploadUrlsPath = urlResults.uploadUrlsPath;
@@ -98,15 +97,15 @@ function main() {
         // TODO: Step 2 - Filter download data
         console.log('\nStep 2: Filtering download data.');
         console.log('='.repeat(60));
-        processNetlogFile(netlogFilePath, urlResults.downloadUrlsPath);
+        processNetlogFile(netlogFilePath, urlResults.downloadUrlsPath, "download");
 
         // TODO: Step 3 - Filter upload data
         console.log('\nStep 3: Filtering upload data.');
         console.log('='.repeat(60));
-        processNetlogFile(netlogFilePath, urlResults.uploadUrlsPath);
+        processNetlogFile(netlogFilePath, urlResults.uploadUrlsPath, "upload");
 
         // // TODO: Step 4 - Filter CPU data. Does this need to be done here or should it be done as part of processing?
-        // console.log('\n[STEP 4] Filtering CPU data...');
+        // console.log('\nSTEP 4: Filtering CPU data...');
         // filterCpuData(path.dirname(netlogFilePath));
 
         console.log('\n' + '='.repeat(60));

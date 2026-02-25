@@ -30,9 +30,21 @@ const { captureLatencyData, calculateLatencyStatistics, updateAllLatencyStatisti
 const { processHttpStreamJobIds, processSocketIds } = require('./filter-sockets')
 
 // Immediately invoked anonomous function to read the contents of the Netlog file
-function processNetlogFile(filePath, urlPath) {
+function processNetlogFile(filePath, urlPath, test) {
     try {
-        directory = path.dirname(urlPath);
+        const directory = path.dirname(urlPath);
+
+        // Add a check here: If byte_time_list.json already exists, skip processing
+        // for upload: if current_position_list.json already exists, skip processing
+
+        const byteTimeListPath = path.join(directory, 'byte_time_list.json');
+        const currentPositionListPath = path.join(directory, 'current_position_list.json');
+
+        if (fs.existsSync(byteTimeListPath) || fs.existsSync(currentPositionListPath)) {
+            console.log('Skipping ' + test + ' filtering: Files already exist.');
+            return;
+        }
+
         const urlJSON = parseJSONFromFile(urlPath);
 
         const data = readFileSync(filePath);
