@@ -80,7 +80,7 @@ for dbscan_option in configs['dbscan']:
     for slow_start_option in configs['slow_start']:
         for bin_size_option in configs['bin_size']:
             print(f"Running configuration {i}: DBSCAN={dbscan_option}, Slow Start={slow_start_option}, Bin Size={bin_size_option}ms")
-            # Reset byte_count for each configuration
+            # Reset byte_count for each configuration - TODO: double check this is needed
             byte_count = normalization_data['byte_count']
             # Create a new statistics accumulator for this configuration
             config_accumulator = StatisticsAccumulator(args.base_path)

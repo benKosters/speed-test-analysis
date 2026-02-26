@@ -13,6 +13,7 @@ show_help() {
     echo "  -download            Process only download data"
     echo "  --save               Save plots (passed to main.py)"
     echo "  --bin <n>            Bin size for aggregating data (passed to main.py)"
+    echo "  --all-configs        Run all 16 configurations (passed to main.py)"
     echo "  -h, --help           Show this help message"
     echo ""
     echo "Examples:"
@@ -20,6 +21,7 @@ show_help() {
     echo "  ./process_netlog_data.sh /path/to/test/directory -download --save"
     echo "  ./process_netlog_data.sh /path/to/test/directory --save --bin 5"
     echo "  ./process_netlog_data.sh /path/to/test/directory -upload --bin 10"
+    echo "  ./process_netlog_data.sh /path/to/test/directory --all-configs"
     exit 0
 }
 
@@ -28,6 +30,7 @@ TEST_DIR=""
 FILTER_MODE=""
 SAVE_FLAG=""
 BIN_FLAG=""
+ALL_CONFIGS_FLAG=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -50,6 +53,10 @@ while [[ $# -gt 0 ]]; do
             fi
             BIN_FLAG="--bin $2"
             shift 2
+            ;;
+        --all-configs)
+            ALL_CONFIGS_FLAG="--all-configs"
+            shift
             ;;
         -h|--help)
             show_help
@@ -144,7 +151,7 @@ if [ "$FILTER_MODE" != "-upload" ]; then
     if [ -d "$DOWNLOAD_DIR" ] && [ -f "$DOWNLOAD_DIR/byte_time_list.json" ]; then
         echo -e "Processing download data"
 
-        python3 "$ANALYSIS_SCRIPT" "$DOWNLOAD_DIR" $SAVE_FLAG $BIN_FLAG
+        python3 "$ANALYSIS_SCRIPT" "$DOWNLOAD_DIR" $SAVE_FLAG $BIN_FLAG $ALL_CONFIGS_FLAG
 
         if [ $? -ne 0 ]; then
             echo "Warning: Download analysis failed."
@@ -161,7 +168,7 @@ if [ "$FILTER_MODE" != "-download" ]; then
     if [ -d "$UPLOAD_DIR" ] && [ -f "$UPLOAD_DIR/current_position_list.json" ]; then
         echo -e "Processing upload data."
 
-        python3 "$ANALYSIS_SCRIPT" "$UPLOAD_DIR" $SAVE_FLAG $BIN_FLAG
+        python3 "$ANALYSIS_SCRIPT" "$UPLOAD_DIR" $SAVE_FLAG $BIN_FLAG $ALL_CONFIGS_FLAG
 
         if [ $? -ne 0 ]; then
             echo "Warning: Upload analysis failed."

@@ -3,7 +3,13 @@
 node_modules/
 ookla/test-execution/.env
 ookla/test-tool/.env
-csvs/
+# Keep the dataset directory as a stub, but no contents
+datasets/*
+!datasets/.gitkeep
+
+plot-images/*
+!/plot-images/.gitkeep
+
 # Ignore all contents of the ookla-test-results directory
 ookla/test-execution/ookla-test-results/*
 ookla/test-tool/ookla-test-results/*
