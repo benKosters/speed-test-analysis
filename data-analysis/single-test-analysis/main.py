@@ -19,6 +19,7 @@ Steps of the program:
 """
 import argparse
 import os
+import math
 # Custom modules.
 import data_normalization as dn
 import dimension_throughput_calc as tp_calc
@@ -26,6 +27,7 @@ import plots
 from statistics import StatisticsAccumulator
 import dimension_data_selection as data_selection
 import dimension_dbscan as dbscan
+import dimension_slow_start as slow_start
 
 # Set up argument parsing to allow a base path as input
 parser = argparse.ArgumentParser(description='Process byte time and latency JSON files.')
@@ -37,6 +39,9 @@ args = parser.parse_args()
 
 print(f"Analyzing test: {args.base_path}")
 print(f"Bin size: {args.bin}ms\n")
+
+server = os.path.basename(os.path.dirname(args.base_path) if args.base_path.endswith(('download','download/','upload/','upload')) else args.base_path).split('-')[0]
+print(f"Server: {server}\n")
 
 socket_file = os.path.join(args.base_path, "socketIds.json")
 
@@ -58,47 +63,57 @@ byte_count = normalization_data['byte_count']
 data_selection_results = data_selection.run_data_selection_driver(byte_count, aggregated_time, stats_accumulator)
 
 if args.all_configs:
-    print("Computing all 16 configurations.")
+    print("Computing all configurations.")
     print("\n" + "="*60)
 
     configs = {
+        'all_data': [True, False], # True is all data, False is max flow only
         'dbscan': [True, False],
         'slow_start': [True, False],
-        'bin_size': [1, 5, 10, 50]
+        'bin_size': [1, 5, 10, 25, 50, 75, 100]
     }
 else:
     print("Running default configuration.")
     configs = {
+        'all_data': [True], # Default to just max flow data
         'dbscan': [False],
-        'slow_start': [False],
+        # 'slow_start': [False], #TODO: Add slow start filtering
         'bin_size': [args.bin]
     }
 
+if os.path.exists(os.path.join(args.base_path, "configuration_metrics.csv")):
+    print("Configuration metrics CSV already exists. It will be overwritten with new results.")
+    os.remove(os.path.join(args.base_path, "configuration_metrics.csv"))
+
+# For tracking the configuration number
 print("\n" + "="*60)
 i = 0
-for dbscan_option in configs['dbscan']:
-    for slow_start_option in configs['slow_start']:
+
+for data_selection in configs['all_data']:
+    for dbscan_option in configs['dbscan']:
+        #for slow_start_option in configs['slow_start']:
         for bin_size_option in configs['bin_size']:
-            print(f"Running configuration {i}: DBSCAN={dbscan_option}, Slow Start={slow_start_option}, Bin Size={bin_size_option}ms")
+            print(f"Running configuration {i}: DBSCAN={dbscan_option}, Bin Size={bin_size_option}ms")
             # Reset byte_count for each configuration - TODO: double check this is needed
             byte_count = normalization_data['byte_count']
             # Create a new statistics accumulator for this configuration
             config_accumulator = StatisticsAccumulator(args.base_path)
+            config_accumulator.add('config_number', i)
+            config_accumulator.add('all_data', data_selection)
             config_accumulator.add('dbscan_filter', dbscan_option)
-            config_accumulator.add('slow_start_filter', slow_start_option)
+            #config_accumulator.add('slow_start_filter', slow_start_option)
             config_accumulator.add('bin_size_ms', bin_size_option)
-
             # Step 4: Apply DBSCAN -------------------------------------------
-            if dbscan_option:
-                byte_count = dbscan.run_dbscan_driver(args.base_path, dbscan_option, config_accumulator)
+            byte_count = dbscan.run_dbscan_driver(args.base_path, dbscan_option, byte_count, config_accumulator)
 
             # Step 5: Slowstart Filtering ------------------------------------
-            # TODO Update to add slow start filtering here
-            if slow_start_option:
-                pass
+            # TODO Fix Slow Start Filtering here
+            # TODO: Fix parameter passing of byte_count!
+            # if slow_start_option:
+            #    byte_count = slow_start.run_slowstart_driver(args.base_path, stats_accumulator, config_accumulator, byte_count=byte_count)
 
             # Step 6: Throughput Calculation ----------------------------------
-            throughput_results = tp_calc.run_throughput_calculation_driver(byte_count, aggregated_time, source_times, begin_time, bin_size_option, stats_accumulator, config_accumulator)
+            throughput_results = tp_calc.run_throughput_calculation_driver(byte_count, aggregated_time, source_times, begin_time, bin_size_option, data_selection, stats_accumulator, config_accumulator)
 
             if args.all_configs:
                 config_accumulator.append_to_csv('configuration_metrics.csv')
@@ -106,17 +121,28 @@ for dbscan_option in configs['dbscan']:
 
 stats_accumulator.print_summary()
 
+end_time = math.ceil(stats_accumulator.get('list_duration_sec'))
+print("begin time:", begin_time, "end time:", end_time)
+
 #Step 7: Plotting ------------------------------------------------
 
-plots.run_plot_driver(
-    byte_count=byte_count,
-    throughput_results=throughput_results['throughput_results'],
-    throughput_by_flows=throughput_results['throughput_by_flows'],
-    source_times=source_times,
-    begin_time=begin_time,
-    base_path=args.base_path,
-    save=args.save
-)
+# TODO: This many parameters is bad practice and should be handled differently.
+plot_data = {
+    "server": server,
+    "bin_size_ms": args.bin,
+    "test_type": stats_accumulator.get('test_type'),
+    "byte_list": byte_list,
+    "byte_count": byte_count,
+    "throughput_results": throughput_results['throughput_results'],
+    "throughput_by_flows": throughput_results['throughput_by_flows'],
+    "source_times": source_times,
+    "begin_time": begin_time,
+    "end_time": end_time,
+    "base_path": args.base_path,
+    "save": args.save
+}
+plots.run_plot_driver(plot_data)
+
 
 #Step 8: Write Stats Accumulator to JSON -------------------------
 stats_accumulator.save_all()

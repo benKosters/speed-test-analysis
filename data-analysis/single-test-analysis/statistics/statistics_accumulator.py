@@ -158,6 +158,15 @@ class StatisticsAccumulator:
         else:
             df = pd.DataFrame([flat_stats])
 
+        # TODO: This is an attempt to ensure numeric columns are saved apporpriately, but this may not work correctly
+        # df = df.infer_objects()
+        # for col in df.columns:
+        #     # Try to convert to numeric if possible
+        #     try:
+        #         df[col] = pd.to_numeric(df[col])
+        #     except:
+        #         pass
+
         df.to_csv(filepath, index=False)
         print(f"Appended statistics to: {filepath}")
         return filepath

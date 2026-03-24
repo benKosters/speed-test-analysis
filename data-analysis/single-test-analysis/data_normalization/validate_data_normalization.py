@@ -60,7 +60,15 @@ def byte_count_validation(byte_list, byte_count):
     print(f"Percentage difference raw bytes vs unique timestamp bytes: {percent_loss:.2f}%")
     print("-" * 55)
 
-    return total_raw_bytes, total_processed_bytes, list_duration_sec, count_duration_sec, percent_loss
+    return {
+        "total_raw_bytes": total_raw_bytes,
+        "total_processed_bytes": total_processed_bytes,
+        "list_duration_sec": list_duration_sec,
+        "count_duration_sec": count_duration_sec,
+        "first_timestamp": first_timestamp,
+        "last_timestamp": last_timestamp,
+        "percent_byte_loss": percent_loss
+    }
 
 #Convert the timestamps in byte_count to seconds - #FIXME: confirm that the first timestamp matches the first timestamp in aggregated_time
 def normalize_byte_count(byte_count, output_file_path=None):

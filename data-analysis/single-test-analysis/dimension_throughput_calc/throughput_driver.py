@@ -1,12 +1,12 @@
 import dimension_throughput_calc as tp_calc
 import numpy as np
 
-def run_throughput_calculation_driver(byte_count, aggregated_time, source_times, begin_time, bin_size, stats_accumulator, config_accumulator):
+def run_throughput_calculation_driver(byte_count, aggregated_time, source_times, begin_time, bin_size, data_selection, stats_accumulator, config_accumulator):
     """
     Calculate throughput metrics and add them to the config accumulator.
 
     Metrics collected:
-    - Mean, median, std, min, max throughput
+    - Mean, median, std, min, max, range, variance throughput
     - Bulk throughput (total bytes / total time for max flow points)
     - Number of data points and bins
     - Discarded data statistics (bytes, points, time)
@@ -15,8 +15,7 @@ def run_throughput_calculation_driver(byte_count, aggregated_time, source_times,
 
     # Calculate throughput with the specified bin size, tracking discarded data
     throughput_results, discarded_stats = tp_calc.calculate_interval_throughput_tracking_discarded_data(
-        aggregated_time, byte_count, num_flows, bin_size, begin_time
-    )
+        aggregated_time, byte_count, num_flows, bin_size, begin_time, all_data=data_selection)
 
     # Calculate throughput statistics
     if throughput_results:
@@ -27,6 +26,10 @@ def run_throughput_calculation_driver(byte_count, aggregated_time, source_times,
         config_accumulator.add('std_throughput_mbps', float(np.std(throughputs)))
         config_accumulator.add('min_throughput_mbps', float(np.min(throughputs)))
         config_accumulator.add('max_throughput_mbps', float(np.max(throughputs)))
+        config_accumulator.add('95th_percentile_throughput_mbps', float(np.percentile(throughputs, 95)))
+        config_accumulator.add('coefficient_of_variation', float(np.std(throughputs) / np.mean(throughputs)) if np.mean(throughputs) > 0 else 0)
+        # config_accumulator.add('range_throughput_mbps', float(np.max(throughputs) - np.min(throughputs)))
+        config_accumulator.add('variance_throughput_mbps', float(np.var(throughputs)))
         config_accumulator.add('num_throughput_bins', len(throughput_results))
     else:
         config_accumulator.add('mean_throughput_mbps', 0.0)
@@ -34,17 +37,14 @@ def run_throughput_calculation_driver(byte_count, aggregated_time, source_times,
         config_accumulator.add('std_throughput_mbps', 0.0)
         config_accumulator.add('min_throughput_mbps', 0.0)
         config_accumulator.add('max_throughput_mbps', 0.0)
+        config_accumulator.add('95th_percentile_throughput_mbps', 0.0)
+        config_accumulator.add('coefficient_of_variation', 0.0)
+        config_accumulator.add('variance_throughput_mbps', 0.0)
         config_accumulator.add('num_throughput_bins', 0)
 
-    # Calculate bulk throughput (total bytes / total time for max flow points only)
-    total_bytes_max_flows = sum(byte_count[ts][0] for ts in byte_count if byte_count[ts][1] == num_flows)
-    max_flow_timestamps = [ts for ts in byte_count if byte_count[ts][1] == num_flows]
-    if max_flow_timestamps:
-        time_span_ms = max(max_flow_timestamps) - min(max_flow_timestamps)
-        time_span_sec = time_span_ms / 1000
-        bulk_throughput_mbps = (total_bytes_max_flows * 8 / 1_000_000) / time_span_sec if time_span_sec > 0 else 0
-    else:
-        bulk_throughput_mbps = 0.0
+    bytes = stats_accumulator.get("total_raw_bytes")
+    timespan = stats_accumulator.get("list_duration_sec")
+    bulk_throughput_mbps = (bytes * 8 / 1_000_000) / (timespan)
 
     config_accumulator.add('bulk_throughput_mbps', float(bulk_throughput_mbps))
 

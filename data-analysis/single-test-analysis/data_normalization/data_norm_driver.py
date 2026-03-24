@@ -50,16 +50,18 @@ def run_normalization_driver(base_path, stats_accumulator, socket_file=None):
         print(f"Calculated and saved byte_count")
 
     # Validation statistics
-    total_raw, total_proc, list_dur, count_dur, percent_loss = byte_count_validation(byte_list, byte_count)
+    validation_stats = byte_count_validation(byte_list, byte_count)
     num_flows = max(byte_count[timestamp][1] for timestamp in byte_count)
-    stats_accumulator.add('total_raw_bytes', total_raw)
-    stats_accumulator.add('total_processed_bytes', total_proc)
-    stats_accumulator.add('list_duration_sec', list_dur)
-    stats_accumulator.add('count_duration_sec', count_dur)
-    stats_accumulator.add('percent_byte_loss', percent_loss)
+    stats_accumulator.add('total_raw_bytes', validation_stats['total_raw_bytes'])
+    stats_accumulator.add('total_processed_bytes', validation_stats['total_processed_bytes'])
+    stats_accumulator.add('first_timestamp', validation_stats['first_timestamp'])
+    stats_accumulator.add('last_timestamp', validation_stats['last_timestamp'])
+    stats_accumulator.add('list_duration_sec', validation_stats['list_duration_sec'])
+    stats_accumulator.add('count_duration_sec', validation_stats['count_duration_sec'])
+    stats_accumulator.add('percent_byte_loss', validation_stats['percent_byte_loss'])
     stats_accumulator.add('num_sockets', num_flows)
 
-    print(f"\n{percent_loss:.2f}% byte loss after processing")
+    print(f"\n{validation_stats['percent_byte_loss']:.2f}% byte loss after processing")
     print("=" * 60)
 
     return {

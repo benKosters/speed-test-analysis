@@ -96,7 +96,7 @@ def calculate_interval_throughput(aggregated_time, byte_count, num_flows, interv
 
     return throughput_results
 
-def calculate_interval_throughput_tracking_discarded_data(aggregated_time, byte_count, num_flows, interval_threshold, begin_time):
+def calculate_interval_throughput_tracking_discarded_data(aggregated_time, byte_count, num_flows, interval_threshold, begin_time, all_data = False):
     """
     Calculate throughput using interval-based aggregation to avoid burst artifacts.
 
@@ -138,7 +138,11 @@ def calculate_interval_throughput_tracking_discarded_data(aggregated_time, byte_
         time_diff = current_list_time - prev_list_time
 
         # Skip if not all flows are contributing (current_list_time should always be in byte_count, unless it is the last timestamp)
-        if current_list_time not in byte_count or byte_count[current_list_time][1] != num_flows:
+        if all_data: # If all data is selected, only skip if there are 0 flows
+            data_accumulation_reset = current_list_time not in byte_count or byte_count[current_list_time][1] <= 0
+        else:
+            data_accumulation_reset = current_list_time not in byte_count or byte_count[current_list_time][1] != num_flows
+        if data_accumulation_reset:
             # Track discarded data before resetting
             if accumulated_bytes > 0:
                 discarded_intervals += 1

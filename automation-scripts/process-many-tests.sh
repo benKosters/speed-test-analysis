@@ -123,10 +123,10 @@ fi
 chmod +x "$PROCESS_SCRIPT"
 
 # Function to check if directory is a test directory
-# A test directory should have download/ or upload/ subdirectories
+# A test directory should have netlog.json and speedtest_result.json (the raw test data)
 is_test_directory() {
     local dir="$1"
-    [ -d "$dir/download" ] || [ -d "$dir/upload" ]
+    [ -f "$dir/netlog.json" ] && [ -f "$dir/speedtest_result.json" ]
 }
 
 # Function to check if test matches the filter
@@ -158,9 +158,9 @@ echo ""
 TEST_DIRECTORIES=()
 
 # Use find to locate all potential test directories
-# Look for directories that contain download/ or upload/ subdirectories
-while IFS= read -r -d '' dir; do
-    parent_dir=$(dirname "$dir")
+# Look for directories that contain netlog.json (raw test data marker)
+while IFS= read -r -d '' netlog_file; do
+    parent_dir=$(dirname "$netlog_file")
     # Check if parent is a test directory and hasn't been added yet
     if is_test_directory "$parent_dir"; then
         test_name=$(basename "$parent_dir")
@@ -172,7 +172,7 @@ while IFS= read -r -d '' dir; do
             fi
         fi
     fi
-done < <(find "$SEARCH_DIR" -type d \( -name "download" -o -name "upload" \) -print0)
+done < <(find "$SEARCH_DIR" -type f -name "netlog.json" -print0)
 
 # Sort the test directories for consistent processing order
 IFS=$'\n' TEST_DIRECTORIES=($(sort <<<"${TEST_DIRECTORIES[*]}"))
