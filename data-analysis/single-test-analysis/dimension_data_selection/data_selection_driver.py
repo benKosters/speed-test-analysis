@@ -24,6 +24,10 @@ def run_data_selection_driver(byte_count, aggregated_time, stats_accumulator):
 
     # Sum bytes where all flows are contributing
     num_bytes_all_flows_contributing = sum(byte_count[ts][0] for ts in byte_count if byte_count[ts][1] == num_flows)
+    num_bytes_not_max_flows = sum(byte_count[ts][0] for ts in byte_count if byte_count[ts][1] != num_flows)
+
+    print("**Num bytes all flows contributing:**", num_bytes_all_flows_contributing)
+    print("**Num bytes not max flows:**", num_bytes_not_max_flows)
 
     # Calculate time duration where all flows are contributing
     if aggregated_time:
@@ -39,12 +43,12 @@ def run_data_selection_driver(byte_count, aggregated_time, stats_accumulator):
     else:
         time_all_flows_contributing = 0
 
-    # === Compute Non-Max Flow Metrics ===
+    # Compute Non-Max Flow Metrics
     num_points_not_max_flows = total_points - num_points_all_flows_contributing
     num_bytes_not_max_flows = total_bytes - num_bytes_all_flows_contributing
     time_not_max_flows = total_duration_ms - time_all_flows_contributing
 
-    # === Compute Percentages ===
+    # Compute Percentages
     percent_points_all_flows_contributing = (num_points_all_flows_contributing / total_points * 100) if total_points > 0 else 0
     percent_points_not_max_flows = (num_points_not_max_flows / total_points * 100) if total_points > 0 else 0
 
@@ -81,7 +85,7 @@ def run_data_selection_driver(byte_count, aggregated_time, stats_accumulator):
         'percent_time_not_max_flows': percent_time_not_max_flows
     })
 
-    # === Filter to Selected Data (Max Flows Only) ===
+    #Filter to Selected Data (Max Flows Only)
     selected_byte_count = {
         ts: byte_count[ts]
         for ts in byte_count

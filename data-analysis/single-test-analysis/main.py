@@ -24,9 +24,9 @@ import math
 import data_normalization as dn
 import dimension_throughput_calc as tp_calc
 import plots
-from statistics import StatisticsAccumulator
+from statistics import StatisticsAccumulator, save_socket_stream_data
 import dimension_data_selection as data_selection
-import dimension_dbscan as dbscan
+import dimension_artifact as artifact
 import dimension_slow_start as slow_start
 
 # Set up argument parsing to allow a base path as input
@@ -62,21 +62,30 @@ byte_count = normalization_data['byte_count']
 # TODO Data selection, collect these metrics
 data_selection_results = data_selection.run_data_selection_driver(byte_count, aggregated_time, stats_accumulator)
 
+# http_stream_data_structure = save_socket_stream_data(byte_list, source_times, args.base_path, print_output=True)
+# exit()  # TEMP: for populating http_stream_data.json
+
 if args.all_configs:
     print("Computing all configurations.")
     print("\n" + "="*60)
 
+    # configs = {
+    #     'all_data': [True, False], # True is all data, False is max flow only
+    #     'dbscan': [True, False],
+    #     'slow_start': [True, False],
+    #     'bin_size': [1, 5, 10, 25, 50, 75, 100]
+    # }
     configs = {
         'all_data': [True, False], # True is all data, False is max flow only
-        'dbscan': [True, False],
-        'slow_start': [True, False],
-        'bin_size': [1, 5, 10, 25, 50, 75, 100]
+        'artifact_filter': [True, False],
+        #  'slow_start': [True, False],
+        'bin_size': [1, 2, 5, 10, 50, 100]
     }
 else:
     print("Running default configuration.")
     configs = {
-        'all_data': [True], # Default to just max flow data
-        'dbscan': [False],
+        'all_data': [False], # Default to just max flow data
+        'artifact_filter': [False],
         # 'slow_start': [False], #TODO: Add slow start filtering
         'bin_size': [args.bin]
     }
@@ -89,35 +98,66 @@ if os.path.exists(os.path.join(args.base_path, "configuration_metrics.csv")):
 print("\n" + "="*60)
 i = 0
 
+
+# 3-22 note: we have now flipped to do binning -> artifact filtering
 for data_selection in configs['all_data']:
-    for dbscan_option in configs['dbscan']:
+    for artifact_filter_option in configs['artifact_filter']:
         #for slow_start_option in configs['slow_start']:
         for bin_size_option in configs['bin_size']:
-            print(f"Running configuration {i}: DBSCAN={dbscan_option}, Bin Size={bin_size_option}ms")
+            print(f"Running configuration {i}: Artifact Filter={artifact_filter_option}, Bin Size={bin_size_option}ms")
             # Reset byte_count for each configuration - TODO: double check this is needed
             byte_count = normalization_data['byte_count']
             # Create a new statistics accumulator for this configuration
             config_accumulator = StatisticsAccumulator(args.base_path)
             config_accumulator.add('config_number', i)
             config_accumulator.add('all_data', data_selection)
-            config_accumulator.add('dbscan_filter', dbscan_option)
+            config_accumulator.add('artifact_filter', artifact_filter_option)
             #config_accumulator.add('slow_start_filter', slow_start_option)
             config_accumulator.add('bin_size_ms', bin_size_option)
-            # Step 4: Apply DBSCAN -------------------------------------------
-            byte_count = dbscan.run_dbscan_driver(args.base_path, dbscan_option, byte_count, config_accumulator)
 
-            # Step 5: Slowstart Filtering ------------------------------------
-            # TODO Fix Slow Start Filtering here
-            # TODO: Fix parameter passing of byte_count!
-            # if slow_start_option:
-            #    byte_count = slow_start.run_slowstart_driver(args.base_path, stats_accumulator, config_accumulator, byte_count=byte_count)
+            # Step 1 and 2Throughput Calculation / Binning ----------------------------------
+            print(f"Running throughput calculation driver for configuration {i}")
+            all_throughput_data = tp_calc.run_throughput_calculation_driver(byte_count, aggregated_time, begin_time, bin_size_option, data_selection, stats_accumulator, config_accumulator)
 
-            # Step 6: Throughput Calculation ----------------------------------
-            throughput_results = tp_calc.run_throughput_calculation_driver(byte_count, aggregated_time, source_times, begin_time, bin_size_option, data_selection, stats_accumulator, config_accumulator)
+            # Step 3: Artifact Filtering ----------------------------------------------------
+            strict_interval_throughput_results = artifact.run_artifact_filter(
+                config_accumulator,
+                all_throughput_data['strict_interval_throughput_results'],
+                'throughput',
+                artifact_filter=artifact_filter_option,
+                folderpath=args.base_path,
+                plot_suffix=f"_{bin_size_option}_maxflow_{not data_selection}",
+                throughput_method="strict"
+            )
+            threshold_interval_throughput_results = artifact.run_artifact_filter(
+                config_accumulator,
+                all_throughput_data['threshold_interval_throughput'],
+                'throughput',
+                artifact_filter=artifact_filter_option,
+                folderpath=args.base_path,
+                plot_suffix=f"_{bin_size_option}_maxflow_{not data_selection}",
+                throughput_method="threshold"
+            )
+
+            # 3-24 update: now add the updated throughput values after dbscan has filtered the results
+
+            # Step 4: Compute Throughput Metrics --------------------------------------------
+            strict_throughput_metrics = tp_calc.compute_throughput_metrics(strict_interval_throughput_results, "strict")
+            for metric_name, metric_value in strict_throughput_metrics.items():
+                config_accumulator.add(metric_name, metric_value)
+
+            threshold_throughput_metrics = tp_calc.compute_throughput_metrics(threshold_interval_throughput_results, "threshold")
+            for metric_name, metric_value in threshold_throughput_metrics.items():
+                config_accumulator.add(metric_name, metric_value)
+
 
             if args.all_configs:
                 config_accumulator.append_to_csv('configuration_metrics.csv')
             i += 1
+
+            # if not args.all_configs:
+            #     dn.analyze_throughput_intervals(all_throughput_data['throughput_results'])
+            #     config_accumulator.print_summary()
 
 stats_accumulator.print_summary()
 
@@ -133,15 +173,17 @@ plot_data = {
     "test_type": stats_accumulator.get('test_type'),
     "byte_list": byte_list,
     "byte_count": byte_count,
-    "throughput_results": throughput_results['throughput_results'],
-    "throughput_by_flows": throughput_results['throughput_by_flows'],
+    "strict_interval_throughput_results": strict_interval_throughput_results,
+    "threshold_interval_throughput_results": threshold_interval_throughput_results,
+    "throughput_by_flows": all_throughput_data['throughput_by_flows'],
     "source_times": source_times,
     "begin_time": begin_time,
     "end_time": end_time,
     "base_path": args.base_path,
     "save": args.save
 }
-plots.run_plot_driver(plot_data)
+if(args.save):
+    plots.run_plot_driver(plot_data)
 
 
 #Step 8: Write Stats Accumulator to JSON -------------------------

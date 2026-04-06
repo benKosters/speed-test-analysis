@@ -16,10 +16,11 @@ def calculate_traditional_throughput(aggregated_time, byte_count, num_flows, beg
     This is the traditional method that A and A used to calculate throughput.
     By looping through the aggregated timestamps again, they use the the time differences between the two as the time interval.
     This produces various time intervals, mostly 1 or 2 ms. Only calculate the throughput if all flows are contributing at that point.
+    TODO: Delete this function, we have not used it since September 2025
     """
     throughput_results = []
 
-    for i in range(len(aggregated_time[1:])):
+    for i in range(1, len(aggregated_time)):
         current_list_time = aggregated_time[i]
         prev_list_time = aggregated_time[i-1]
 
@@ -35,30 +36,13 @@ def calculate_traditional_throughput(aggregated_time, byte_count, num_flows, beg
 
     return throughput_results
 
-def calculate_interval_throughput(aggregated_time, byte_count, num_flows, interval_threshold, begin_time):
-    """
-    Calculate throughput using interval-based aggregation to avoid burst artifacts.
-
-    This method accumulates bytes and time over intervals until a minimum time threshold
-    is reached, then calculates throughput for the combined interval. This approach
-    eliminates artificial spikes caused by 0ms time intervals where multiple byte
-    transfers occur at the same timestamp.
-
-    The function only calculates throughput when all specified flows are contributing
-    to ensure consistent measurements across the timeline.
-
-    Returns:
-        list: List of dictionaries containing throughput measurements, each with:
-            - 'time': Time since begin_time in seconds (float)
-            - 'throughput': Throughput in Mbps (float)
-    """
+def calculate_interval_threshold_throughput(aggregated_time, byte_count, num_flows, interval_threshold, begin_time):
     throughput_results = []
     accumulated_bytes = 0
     accumulated_time = 0
     interval_start = None
-    byte_counts_with_small_intervals = 0
 
-    for i in range(len(aggregated_time[1:])):
+    for i in range(1, len(aggregated_time)):
         current_list_time = aggregated_time[i]
         prev_list_time = aggregated_time[i-1]
         time_diff = current_list_time - prev_list_time
@@ -96,43 +80,20 @@ def calculate_interval_throughput(aggregated_time, byte_count, num_flows, interv
 
     return throughput_results
 
-def calculate_interval_throughput_tracking_discarded_data(aggregated_time, byte_count, num_flows, interval_threshold, begin_time, all_data = False):
-    """
-    Calculate throughput using interval-based aggregation to avoid burst artifacts.
+def calculate_interval_threshold_throughput_tracking_discarded_data(aggregated_time, byte_count, num_flows, interval_threshold, begin_time, all_data = False):
 
-    This method accumulates bytes and time over intervals until a minimum time threshold
-    is reached, then calculates throughput for the combined interval. This approach
-    eliminates artificial spikes caused by 0ms time intervals where multiple byte
-    transfers occur at the same timestamp.
-
-    The function only calculates throughput when all specified flows are contributing
-    to ensure consistent measurements across the timeline.
-
-    Returns:
-        tuple: (throughput_results, discarded_stats)
-            - throughput_results: List of dictionaries containing throughput measurements, each with:
-                - 'time': Time since begin_time in seconds (float)
-                - 'throughput': Throughput in Mbps (float)
-            - discarded_stats: Dictionary containing:
-                - 'discarded_intervals': Number of accumulated intervals thrown away
-                - 'discarded_objects': Number of individual objects (data points) thrown away
-                - 'discarded_bytes': Total bytes in discarded data points
-                - 'discarded_time': Total time (ms) in discarded intervals
-    """
     throughput_results = []
     accumulated_bytes = 0
     accumulated_time = 0
     interval_start = None
-    byte_counts_with_small_intervals = 0
 
-    # Track discarded data
     discarded_intervals = 0  # Number of accumulated intervals discarded
     discarded_objects = 0    # Number of individual objects discarded
     discarded_bytes = 0
     discarded_time = 0
     objects_in_current_interval = 0  # Track how many objects are in current accumulated interval
 
-    for i in range(len(aggregated_time[1:])):
+    for i in range(1, len(aggregated_time)):
         current_list_time = aggregated_time[i]
         prev_list_time = aggregated_time[i-1]
         time_diff = current_list_time - prev_list_time
@@ -149,6 +110,12 @@ def calculate_interval_throughput_tracking_discarded_data(aggregated_time, byte_
                 discarded_objects += objects_in_current_interval
                 discarded_bytes += accumulated_bytes
                 discarded_time += accumulated_time
+
+            # Also discard bytes from current invalid interval if it exists in byte_count
+            if current_list_time in byte_count:
+                discarded_objects += 1
+                discarded_bytes += byte_count[current_list_time][0]
+                discarded_time += time_diff
 
             # Reset accumulation if we skip a point
             accumulated_bytes = 0
@@ -209,7 +176,7 @@ def calculate_throughput_with_less_flows(aggregated_time, byte_count, num_flows,
     accumulated_time = 0
     interval_start = None
 
-    for i in range(len(aggregated_time[1:])):
+    for i in range(1, len(aggregated_time)):
         current_list_time = aggregated_time[i]
         prev_list_time = aggregated_time[i - 1]
         time_diff = current_list_time - prev_list_time
@@ -275,7 +242,7 @@ def calculate_throughput_separate_flows(aggregated_time, byte_count, num_flows, 
     accumulated_time = 0
     interval_start = None
 
-    for i in range(len(aggregated_time[1:])):
+    for i in range(1, len(aggregated_time)):
         current_list_time = aggregated_time[i]
         prev_list_time = aggregated_time[i-1]
         time_diff = current_list_time - prev_list_time
@@ -488,3 +455,95 @@ def calculate_throughput_weighted_points(aggregated_time, byte_count, num_flows,
         'total_time': total_time_sec,
         'num_points': len(weighted_points)
     }
+
+#March 28, 2026
+def calculate_throughput_strict_intervals(aggregated_time, byte_count, num_flows, sampling_period, begin_time, all_data=False):
+    throughput_results = []
+    accumulated_bytes = 0
+    accumulated_time = 0
+    current_interval_start = None  # start time of current sampling period (this is a timestamp)
+
+    # Track discarded data
+    discarded_intervals = 0
+    discarded_bytes = 0
+    discarded_time = 0
+
+    # Rudimentary validation: sum of bytes in byte_count should match total bytes used in throughput_results
+    total_bytes_in_byte_count = 0
+
+    for i in range(1, len(aggregated_time)):
+        current_list_time = aggregated_time[i]
+        prev_list_time = aggregated_time[i-1]
+        time_diff = current_list_time - prev_list_time
+
+        #Determine if this particular byte_count event should be used
+        if all_data:
+            # Use all data where at least one flow is contributing
+            valid_data = current_list_time in byte_count and byte_count[current_list_time][1] > 0
+        else:
+            # Only use data where all flows are contributing
+            valid_data = current_list_time in byte_count and byte_count[current_list_time][1] == num_flows
+
+        # If this interval isn't valid (0 flows, or isn't max flow), discard it and move to the next byte_count interval
+        if not valid_data:
+            # Discard any accumulated bytes from previous valid intervals
+            if accumulated_bytes > 0:
+                discarded_intervals += 1
+                discarded_bytes += accumulated_bytes
+                discarded_time += accumulated_time
+
+            # Also discard bytes from current invalid interval if it exists in byte_count
+            if current_list_time in byte_count:
+                discarded_bytes += byte_count[current_list_time][0]
+                discarded_time += time_diff
+
+            accumulated_bytes = 0
+            accumulated_time = 0
+            current_interval_start = None
+            continue
+
+        # For valid byte_count bins, get bytes
+        interval_bytes = byte_count[current_list_time][0]
+
+        # Start a new interval if one doesn't already exist
+        if current_interval_start is None:
+            current_interval_start = prev_list_time
+
+        # Add incoming data to accumulators (there may be bytes/time from the previous interval)
+        accumulated_bytes += interval_bytes
+        accumulated_time += time_diff
+
+        #While the accumulated time is greater than or equal to the sampling period, calculate throughput for each sampling period
+        #compute the proportion of bytes for in the sampling period, then compute the throughput
+        while accumulated_time >= sampling_period:
+            proportion = sampling_period / accumulated_time
+            # bytes_for_period = int(accumulated_bytes * proportion)
+            bytes_for_period = accumulated_bytes * proportion
+            total_bytes_in_byte_count += bytes_for_period
+
+            throughput_results.append({
+                'time': (current_interval_start - begin_time) / 1000,
+                'throughput': (bytes_for_period / sampling_period) * 1000 * (8/1000000)
+            })
+
+            # Subtract what we just used from accumulators
+            accumulated_bytes -= bytes_for_period
+            accumulated_time -= sampling_period
+            current_interval_start += sampling_period
+
+    # At the very end of byte_count, if there is any remaining bytes, these should get added to the discard pile
+    if accumulated_bytes > 0:
+        discarded_intervals += 1
+        discarded_bytes += accumulated_bytes
+        discarded_time += accumulated_time
+
+    print("Number of discarded bytes:", discarded_bytes)
+    discarded_stats = {
+        'discarded_intervals': discarded_intervals,
+        'discarded_bytes': discarded_bytes,
+        'discarded_time': discarded_time,
+        'discarded_objects': 0 # Just a placeholder since this is used in the by the previous throughput computation function
+    }
+
+    print("Number of bytes processed into throughput_results:", total_bytes_in_byte_count)
+    return throughput_results, discarded_stats
