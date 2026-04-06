@@ -50,6 +50,8 @@ def run_throughput_artifact_filter(config_accumulator, throughput_results, artif
         config_accumulator.add(f'{throughput_method}_mean_throughput_mbps_1gbps_filter_only', 0.0)
         config_accumulator.add(f'{throughput_method}_mean_throughput_mbps_dbscan_and_1gbps', 0.0)
         config_accumulator.add(f'{throughput_method}_num_artifact_points', 0)
+        config_accumulator.add(f'{throughput_method}_num_dbscan_identified_points', 0)
+        config_accumulator.add(f'{throughput_method}_num_1gbps_identified_points', 0)
         config_accumulator.add(f'{throughput_method}_num_points_after_filtering', len(throughput_results))
         config_accumulator.add(f'{throughput_method}_percent_artifact_points', 0.0)
         config_accumulator.add(f'{throughput_method}_time_removed_by_filtering_ms', 0.0)
@@ -117,6 +119,8 @@ def run_throughput_artifact_filter(config_accumulator, throughput_results, artif
         percent_time_total = 0.0
 
     # Add combined metrics (for both filters)
+    config_accumulator.add(f'{throughput_method}_num_dbscan_identified_points', int(dbscan_artifacts.sum()))
+    config_accumulator.add(f'{throughput_method}_num_1gbps_identified_points', int(threshold_artifacts.sum()))
     config_accumulator.add(f'{throughput_method}_num_artifact_points', int(num_total_artifacts))
     config_accumulator.add(f'{throughput_method}_num_points_after_filtering', int(num_points_remaining))
     config_accumulator.add(f'{throughput_method}_percent_artifact_points',
