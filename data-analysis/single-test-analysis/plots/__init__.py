@@ -5,11 +5,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from .plot_driver import run_plot_driver
 
-from .throughput_plots import (
+from .plot_threshold_throughput import (
     plot_throughput_and_http_streams,
     plot_throughput_scatter_max_flows_only,
     plot_throughput_rema_separated_by_flows,
     plot_throughput_rema_separated_by_flows_socket_grouped
+)
+
+from .plot_strict_throughput import (
+    plot_strict_throughput_scatter
 )
 
 from .plot_sorted_throughput import (
@@ -62,6 +66,8 @@ __all__ = [
 
     'load_byte_count_bar',
     'create_bytecount_bar_chart',
+    # For strict interval throughput
+    'plot_strict_throughput_scatter'
 ]
 
 __version__ = '1.0.0'

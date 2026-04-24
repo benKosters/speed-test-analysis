@@ -32,13 +32,9 @@ console.log(`Processing socket-level byte counts for test: ${path.basename(paren
 console.log(`Parent directory: ${parentTestDirectory}`);
 
 const processByteCounts = (netlogPath, socketIdsPath, outputDir, testType) => {
-    /**
-     * Collect byte counts at the socket level (layer 4 in TCP/IP model)
-     */
     let byte_time_list = [];
 
     try {
-        // Validate required files
         checkFilePath(netlogPath);
         checkFilePath(socketIdsPath);
 
@@ -233,10 +229,10 @@ try {
     console.log("=".repeat(50));
 
     if (results.length === 0) {
-        console.log("❌ No tests were processed successfully");
+        console.log("No tests were processed successfully");
         process.exit(1);
     } else {
-        console.log(`✅ Successfully processed ${results.length} test(s):`);
+        console.log(`Successfully processed ${results.length} test(s):`);
         results.forEach(result => {
             console.log(`   - ${result.type}: ${result.sockets} sockets`);
         });

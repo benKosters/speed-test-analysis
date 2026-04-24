@@ -34,6 +34,7 @@ This tool runs Ookla speed tests using a headless browser and can collect networ
 • Use `./run-many-tests.sh` to run many tests automatically
 
 • Configure tests in `test-configurations.txt` (one test per line)
+ > possible-configs.txt just holds all configurations used from the main test batch from February 2026
 
 • Example line: `./execute-ookla-test.sh -s spacelink -c multi -p -i eth0`
 

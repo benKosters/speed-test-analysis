@@ -1,12 +1,14 @@
-**Ookla Conventional Test Information**
+## Ookla Conventional Test Information
 
-*This sub-directory contains **both** the tool for performing the Ookla Conventional Test, as well as the script for filtering out the relevant netlog events/data. This is different from the RABBITS directory, which **only** contains the filtering scripts.*
+*This sub-directory contains the tool used for running many Ookla Conventional Tests, as well as the JavaScript files for performing the Netlog filtering*
 
+ #### test-tool
 
-1) test-execution
+This sub-directory holds the files for performing many Ookla speed tests. There is another README that describes how to set up and run tests. It is designed to be highly configurable, running tests in a variety of orders.
+*Note: The Docker file does not work and needs to be corrected*
 
-* This directory contains the scripts for running a speed test against the Ookla server and collecting the necessary raw data (netlog, pcap, metadata).
+ #### netlog-filter
 
-2) data-extraction
+ This sub-directory is for netlog filtering. It is designed to extract both download **and** upload events from one netlog file. The main file that runs this is `main.js`. The filter is designed to be called from other places in the repo. It can be called by the test tool to perform filtering **before** uploading files to the AWS bucket.
 
-* This directory contains scripts for processing the raw network data into structured data that can be used for analysis. Currently we are only examining netlog data but will expand the extraction process.
+These files have been refactored a number of times from their original design with some help from AI to speed up the process, but the original logic was written by hand.

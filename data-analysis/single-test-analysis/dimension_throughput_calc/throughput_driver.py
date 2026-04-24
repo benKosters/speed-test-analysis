@@ -76,19 +76,21 @@ def run_throughput_calculation_driver(byte_count, aggregated_time, begin_time, b
 
     # Calculate throughput grouped by number of flows (for plotting)
     # These are NOT added to config_accumulator since they're just for visualization
-    throughput_by_flows = {}
+    threshold_throughput_by_flows = {}
+    strict_throughput_by_flows = {}
     for flow_count in range(1, num_flows + 1):
-        throughput_by_flows[flow_count], _ = tp_calc.calculate_interval_threshold_throughput_tracking_discarded_data(
+        threshold_throughput_by_flows[flow_count], _ = tp_calc.calculate_interval_threshold_throughput_tracking_discarded_data(
             aggregated_time, byte_count, flow_count, bin_size, begin_time)
 
-        throughput_by_flows[flow_count], _ = tp_calc.calculate_throughput_strict_intervals(
+        strict_throughput_by_flows[flow_count], _ = tp_calc.calculate_throughput_strict_intervals(
             aggregated_time, byte_count, flow_count, bin_size, begin_time)
 
     return {
         "strict_interval_throughput_results": strict_interval_throughput_results,
-        "throughput_by_flows": throughput_by_flows,
+        "strict_throughput_by_flows": strict_throughput_by_flows,
         "strict_interval_discarded_stats": strict_interval_discarded_stats,
-        "threshold_interval_throughput": threshold_interval_throughput_results,
+        "threshold_interval_throughput_results": threshold_interval_throughput_results,
+        "threshold_throughput_by_flows": threshold_throughput_by_flows,
         "threshold_interval_discarded_stats": threshold_interval_discarded_stats
     }
 

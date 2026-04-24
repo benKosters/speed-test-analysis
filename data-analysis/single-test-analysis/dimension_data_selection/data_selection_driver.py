@@ -26,9 +26,6 @@ def run_data_selection_driver(byte_count, aggregated_time, stats_accumulator):
     num_bytes_all_flows_contributing = sum(byte_count[ts][0] for ts in byte_count if byte_count[ts][1] == num_flows)
     num_bytes_not_max_flows = sum(byte_count[ts][0] for ts in byte_count if byte_count[ts][1] != num_flows)
 
-    print("**Num bytes all flows contributing:**", num_bytes_all_flows_contributing)
-    print("**Num bytes not max flows:**", num_bytes_not_max_flows)
-
     # Calculate time duration where all flows are contributing
     if aggregated_time:
         max_flow_timestamps = [ts for ts in byte_count if byte_count[ts][1] == num_flows]

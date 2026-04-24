@@ -464,19 +464,18 @@ def calculate_throughput_strict_intervals(aggregated_time, byte_count, num_flows
     current_interval_start = None  # start time of current sampling period (this is a timestamp)
 
     # Track discarded data
-    discarded_intervals = 0
-    discarded_bytes = 0
-    discarded_time = 0
-
-    # Rudimentary validation: sum of bytes in byte_count should match total bytes used in throughput_results
-    total_bytes_in_byte_count = 0
+    discarded_intervals = 0  # Number of incomplete intervals discarded
+    discarded_bytes = 0  # Total bytes discarded
+    discarded_time = 0  # Total time (ms) discarded
+    discarded_objects = 0  # Number of whole byte_count events discarded
+    objects_in_current_accumulation = 0  # Track objects in current incomplete interval
 
     for i in range(1, len(aggregated_time)):
         current_list_time = aggregated_time[i]
         prev_list_time = aggregated_time[i-1]
         time_diff = current_list_time - prev_list_time
 
-        #Determine if this particular byte_count event should be used
+        # Determine if this particular byte_count event should be used
         if all_data:
             # Use all data where at least one flow is contributing
             valid_data = current_list_time in byte_count and byte_count[current_list_time][1] > 0
@@ -491,15 +490,19 @@ def calculate_throughput_strict_intervals(aggregated_time, byte_count, num_flows
                 discarded_intervals += 1
                 discarded_bytes += accumulated_bytes
                 discarded_time += accumulated_time
+                discarded_objects += objects_in_current_accumulation
 
             # Also discard bytes from current invalid interval if it exists in byte_count
             if current_list_time in byte_count:
+                discarded_objects += 1  # Count this whole invalid event
                 discarded_bytes += byte_count[current_list_time][0]
                 discarded_time += time_diff
 
+            # Reset accumulators
             accumulated_bytes = 0
             accumulated_time = 0
             current_interval_start = None
+            objects_in_current_accumulation = 0
             continue
 
         # For valid byte_count bins, get bytes
@@ -512,18 +515,18 @@ def calculate_throughput_strict_intervals(aggregated_time, byte_count, num_flows
         # Add incoming data to accumulators (there may be bytes/time from the previous interval)
         accumulated_bytes += interval_bytes
         accumulated_time += time_diff
+        objects_in_current_accumulation += 1
 
-        #While the accumulated time is greater than or equal to the sampling period, calculate throughput for each sampling period
-        #compute the proportion of bytes for in the sampling period, then compute the throughput
+        # While the accumulated time is greater than or equal to the sampling period,
+        # calculate throughput for each sampling period using proportional byte distribution
         while accumulated_time >= sampling_period:
+            # Calculate proportion of accumulated data that fits in this sampling period
             proportion = sampling_period / accumulated_time
-            # bytes_for_period = int(accumulated_bytes * proportion)
             bytes_for_period = accumulated_bytes * proportion
-            total_bytes_in_byte_count += bytes_for_period
 
             throughput_results.append({
-                'time': (current_interval_start - begin_time) / 1000,
-                'throughput': (bytes_for_period / sampling_period) * 1000 * (8/1000000)
+                'time': (current_interval_start - begin_time) / 1000,  # Convert to seconds
+                'throughput': (bytes_for_period / sampling_period) * 1000 * (8/1000000)  # Convert to Mbps
             })
 
             # Subtract what we just used from accumulators
@@ -531,19 +534,23 @@ def calculate_throughput_strict_intervals(aggregated_time, byte_count, num_flows
             accumulated_time -= sampling_period
             current_interval_start += sampling_period
 
-    # At the very end of byte_count, if there is any remaining bytes, these should get added to the discard pile
+            # Note: We don't reset objects_in_current_accumulation here because the same objects
+            # may contribute to multiple sampling periods. We only reset when we encounter
+            # invalid data or finish processing.
+
+    # At the very end of byte_count, if there is any remaining data that didn't
+    # complete a full sampling period, add it to the discard pile
     if accumulated_bytes > 0:
         discarded_intervals += 1
         discarded_bytes += accumulated_bytes
         discarded_time += accumulated_time
+        discarded_objects += objects_in_current_accumulation
 
-    print("Number of discarded bytes:", discarded_bytes)
     discarded_stats = {
         'discarded_intervals': discarded_intervals,
         'discarded_bytes': discarded_bytes,
         'discarded_time': discarded_time,
-        'discarded_objects': 0 # Just a placeholder since this is used in the by the previous throughput computation function
+        'discarded_objects': discarded_objects
     }
 
-    print("Number of bytes processed into throughput_results:", total_bytes_in_byte_count)
     return throughput_results, discarded_stats

@@ -2,7 +2,6 @@
  * This file contains utility functions for validating file paths,
  * loading JSON data from files, and splitting URLs by type.
  *
- * This will keep the driver code clean.
  */
 
 const fs = require('fs');

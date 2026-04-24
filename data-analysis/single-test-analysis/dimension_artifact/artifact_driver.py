@@ -1,3 +1,16 @@
+"""
+Main driver for filtering artifacts from throughput data.
+
+We considered two approaches for artifact filtering:
+1) Filter artifacts based on byte counts
+
+2) Filter artifacts based on throughput (this is the current approach)
+
+I kept the old code, but it is very messy and should be refactored.
+
+
+"""
+
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -65,8 +78,8 @@ def run_throughput_artifact_filter(config_accumulator, throughput_results, artif
     # Step 1: Run DBSCAN artifact detection
     print(f"\n Artifact Filter", "="*30)
     # if folderpath is None:
-    #     plot_knn_distance(df[["time", "throughput"]].values, dim=2,
-    #                     title="DBSCAN k-NN Distance for Artifact Detection")
+    # plot_knn_distance(df[["time", "throughput"]].values, dim=2,
+    #                      title="DBSCAN k-NN Distance for Artifact Detection")
 
     dbscan_artifacts = detect_artifacts_dbscan(df, folder=folderpath, suffix=suffix)
     df["dbscan_artifact"] = dbscan_artifacts
@@ -85,6 +98,7 @@ def run_throughput_artifact_filter(config_accumulator, throughput_results, artif
     # DBSCAN only
     dbscan_only_data = df[~df["dbscan_artifact"]].to_dict('records')
     dbscan_only_throughputs = [point['throughput'] for point in dbscan_only_data]
+    plot_dbscan(folderpath, df, suffix)
     mean_dbscan_only = float(np.mean(dbscan_only_throughputs)) if len(dbscan_only_throughputs) > 0 else 0.0
     config_accumulator.add(f'{throughput_method}_mean_throughput_mbps_dbscan_only', mean_dbscan_only)
 
@@ -93,6 +107,8 @@ def run_throughput_artifact_filter(config_accumulator, throughput_results, artif
     threshold_only_throughputs = [point['throughput'] for point in threshold_only_data]
     mean_threshold_only = float(np.mean(threshold_only_throughputs)) if len(threshold_only_throughputs) > 0 else 0.0
     config_accumulator.add(f'{throughput_method}_mean_throughput_mbps_1gbps_filter_only', mean_threshold_only)
+    plot_threshold(config_accumulator, folderpath, throughput_results, df, 1000, suffix, throughput_method)
+
 
     # Both filters (this is what we'll return)
     both_filters_data = df[~(df["dbscan_artifact"] | df["threshold_artifact"])].to_dict('records')
@@ -131,6 +147,7 @@ def run_throughput_artifact_filter(config_accumulator, throughput_results, artif
     # Return filtered data with BOTH filters applied
     filtered_df = df[~df["artifact"]]
     result = filtered_df.to_dict('records')
+    # result = dbscan_only_data
 
     print(f"\nTotal Artifact Points: {num_total_artifacts} out of {num_total_points}")
     print(f"Points Remaining: {num_points_remaining}")
@@ -195,77 +212,6 @@ def run_dbscan_driver_bytecount(folder: str, dbscan_option: bool, byte_count, co
 
     return result
 
-def run_dbscan_driver_throughput(config_accumulator, dbscan_option, throughput_results, bin_size, maxflow, folderpath=None, threshold=1000):
-    """
-    Apply DBSCAN artifact filtering to a list of dicts with 'time' and 'throughput'.
-    Returns the filtered list without artifacts.
-    """
-    if not dbscan_option:
-        # TODO: streamline how 0s are filled in the CSV when dbscan is disabled
-        config_accumulator.add('num_artifact_points', 0)
-        config_accumulator.add('num_points_after_dbscan', 0)
-        config_accumulator.add('percent_artifact_points', 0.0)
-        config_accumulator.add('time_removed_by_dbscan_ms', 0.0)
-        config_accumulator.add('percent_time_removed_by_dbscan', 0.0)
-        config_accumulator.add('mean_throughput_mbps_with_1gbps_threshold', 0.0)
-        config_accumulator.add('median_throughput_mbps_with_1gbps_threshold', 0.0)
-        config_accumulator.add('std_throughput_mbps_with_1gbps_threshold', 0.0)
-        config_accumulator.add('min_throughput_mbps_with_1gbps_threshold', 0.0)
-        config_accumulator.add('max_throughput_mbps_with_1gbps_threshold', 0.0)
-        config_accumulator.add('95th_percentile_throughput_mbps_with_1gbps_threshold', 0.0)
-        config_accumulator.add('coefficient_of_variation_with_1gbps_threshold', 0.0)
-        config_accumulator.add('variance_throughput_mbps_with_1gbps_threshold', 0.0)
-        config_accumulator.add('num_throughput_bins_with_1gbps_threshold', 0)
-
-        return throughput_results
-
-    print(f"\n ARTIFACT FILTERING WITH DBSCAN ON THROUGHPUT DATA")
-    df = pd.DataFrame(throughput_results)
-    # print(df.head())
-    suffix = f"_{bin_size}_{maxflow}"
-    # if folderpath is None:
-    #     plot_knn_distance(df[["time", "throughput"]].values, dim=2, title="DBSCAN k-NN Distance for Artifact Detection")
-    # DBSCAN artifact detection
-    df["artifact"] = detect_artifacts_dbscan(df, folder=folderpath, suffix=suffix)
-
-    # Calculate metrics for config_accumulator
-    num_total_points = len(df)
-    num_artifact_points = df["artifact"].sum()
-    num_points_remaining = num_total_points - num_artifact_points
-
-    # Calculate time metrics if time data is available
-    if num_total_points > 0 and 'time' in df.columns:
-        # Calculate delta_time (time intervals between measurements)
-        df_with_delta = df.copy()
-        df_with_delta['delta_time'] = df_with_delta['time'].astype(float).diff().fillna(0)
-
-        total_time_ms = df_with_delta['delta_time'].sum()
-        time_removed_ms = df_with_delta[df_with_delta['artifact']]['delta_time'].sum()
-        percent_time_filtered = (time_removed_ms / total_time_ms * 100) if total_time_ms > 0 else 0.0
-    else:
-        time_removed_ms = 0.0
-        percent_time_filtered = 0.0
-
-    # Add metrics to config_accumulator
-    config_accumulator.add('num_artifact_points', int(num_artifact_points))
-    config_accumulator.add('num_points_after_dbscan', int(num_points_remaining))
-    config_accumulator.add('percent_artifact_points', float(num_artifact_points / num_total_points * 100) if num_total_points > 0 else 0)
-    config_accumulator.add('time_removed_by_dbscan_ms', float(time_removed_ms))
-    config_accumulator.add('percent_time_removed_by_dbscan', float(percent_time_filtered))
-
-    # Plot artifacts
-    # plot_dbscan(folderpath, df, suffix)
-    # Plot threshold
-    # plot_threshold(config_accumulator, folderpath, throughput_results, df, threshold, suffix)
-    # Print artifact data points
-    print(f"\nDBSCAN Artifact Points:")
-    print(df[df["artifact"]][["time", "throughput"]].head(10))
-    # Return only data that's not artifact
-    filtered_df = df[~df["artifact"]]
-    # Convert back to list of dicts
-    result = filtered_df.to_dict('records')
-    return result
-
 def estimate_eps_kneedle(X, dim=2):
     minPts = 2 * dim
     k = minPts - 1
@@ -291,7 +237,7 @@ def detect_artifacts_dbscan(df, folder=None, suffix=""):
     X = df[["time", "throughput"]].values
     X = StandardScaler().fit_transform(X)
     eps, min_samples = estimate_eps_kneedle(X, dim=2)
-    # plot_knn_distance(X, dim=2, eps=eps, title="DBSCAN k-NN Distance for Artifact Detection", folder=folder, suffix=suffix)
+    plot_knn_distance(X, dim=2, eps=eps, title="DBSCAN k-NN Distance for Artifact Detection", folder=folder, suffix=suffix)
     labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(X)
 
     # Treat the first point as non-artifact to avoid removing the initial measurement.
@@ -435,17 +381,19 @@ def plot_dbscan(folder, df, suffix=""):
     else:
         plt.show()
 
-def plot_threshold(config_accumulator, folder, throughput_results, df, threshold, suffix=""):
+def plot_threshold(config_accumulator, folder, throughput_results, df, threshold, suffix="", throughput_method=""):
     """
     Only called by run_dbscan_throughput
     """
+    print("plotting threshold")
     t0 = df["time"].iloc[0]
     time_normalized = pd.to_numeric(df["time"]) - int(t0)
     y = pd.to_numeric(df["throughput"])  # Mbps
     #TODO: Fix parameter passing here - we compute throughput metrics on all points under 1Gbps threshold
-    throughput_under_threshold_metrics = tp_calc.compute_throughput_metrics(df[df["throughput"] <= threshold].to_dict('records'))
+    throughput_under_threshold_metrics = tp_calc.compute_throughput_metrics(df[df["throughput"] <= threshold].to_dict('records'), throughput_method)
     for metric_name, metric_value in throughput_under_threshold_metrics.items():
-        config_accumulator.add(f"{metric_name}_with_1gbps_threshold", metric_value)
+        prefix = f"{throughput_method}_" if throughput_method else ""
+        config_accumulator.add(f"{prefix}{metric_name}_with_1gbps_threshold", metric_value)
 
     threshold = float(threshold)  # convert to Mbps
     above_mask = y > threshold

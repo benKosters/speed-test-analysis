@@ -378,9 +378,9 @@ def plot_throughput_rema_separated_by_flows(plot_data, start_time=0, end_time=No
 Similar to plot_throughput_rema_separated_by_flows(), but the Gantt chart groups HTTP streams by socket.
 Each socket gets one row, and all streams using that socket are shown on that row.
 """
-def plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, start_time=0, end_time=None, title=None, scatter=False):
+def plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, start_time=0, end_time=None, title=None, scatter=False, rema = False):
     # Extract parameters from plot_data
-    throughput_list_dict = plot_data["throughput_by_flows"]
+    throughput_list_dict = plot_data["all_throughput_data"]['strict_throughput_by_flows']
     source_times = plot_data["source_times"]
     begin_time = plot_data["begin_time"]
     save = plot_data["save"]
@@ -452,13 +452,13 @@ def plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, start_time
 
             segment = combined_df.iloc[segment_start:i]
 
-            ax1.plot(
-                segment['time'],
-                segment['throughput_ema'],
-                color=flow_colors.get(flow_count_prev, 'gray'),
-                linewidth=1.5,
-                linestyle='--',
-            )
+            # ax1.plot(
+            #     segment['time'],
+            #     segment['throughput_ema'],
+            #     color=flow_colors.get(flow_count_prev, 'gray'),
+            #     linewidth=1.5,
+            #     linestyle='--',
+            # )
 
     # Add labels, title, and legend
     ax1.set_xlabel('Time (seconds)')
@@ -472,7 +472,7 @@ def plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, start_time
         server = plot_data.get("server", "Unknown").capitalize()
         test_type = plot_data.get("test_type", "Test").capitalize()
         bin_size = plot_data.get("bin_size_ms", "N/A")
-        ax1.set_title(f'REMA Throughput: {server}, {test_type} with {bin_size}ms Bin Size')
+        # ax1.set_title(f'REMA Throughput: {server}, {test_type} with {bin_size}ms Bin Size')
 
     # Create a custom legend for flow counts
     handles = []
@@ -538,9 +538,10 @@ def plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, start_time
 
     plt.tight_layout()
     if save and base_path:
-        filename = "throughput_rema_separated_by_flows_socket_grouped.png"
+        filename = "placeholder.png"
         plotting_utilities.save_figure(fig, base_path, filename)
-    plt.show()
+    # plt.show()
+    print("Plot created: plot_throughput_rema_separated_by_flows_socket_grouped")
 
 
 def plot_throughput_max_flow_only(plot_data, start_time=0, end_time=None, title=None, plot_type='both'):
