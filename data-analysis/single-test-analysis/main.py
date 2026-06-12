@@ -1,5 +1,5 @@
 """
-This is the main driver for exploratory data analysis (just learning about one single test)
+This is the main driver for processing and analyzing a single Ookla upload or download test.
 
 For a Conventional Ookla test, the command is: python3 main.py ../../ookla/test-tool/ookla-test-results/michwave-multi-2025-10-02_1945 --save
 
@@ -22,19 +22,19 @@ import os
 import math
 import json
 
-# Custom modules.
+# Custom modules
 import data_normalization as dn
-import dimension_throughput_calc as tp_calc
+import compute_throughput as tp_calc
 import plots
-from statistics import StatisticsAccumulator, save_socket_stream_data
-import dimension_data_selection as data_selection
-import dimension_artifact as artifact
-import dimension_slow_start as slow_start
+from compute_statistics import StatisticsAccumulator
+import data_selection as data_selection
+import artifact_filtering as artifact
+import slow_start_filter as slow_start
 
 
-def run_single_test_analysis(base_path, bin_size=1, artifact_filter=False, all_data=True, save_plots=False):
+def run_single_test_analysis(base_path, bin_size=1, artifact_filter=False, dbscan_option = False, all_data=True, save_plots=False):
     """
-    Wrapper function call to allow for this function being called elsewhere (for comparing tests)
+    Wrapper function call to allow for this function being called elsewhere
     """
     print(f"Analyzing test: {base_path}")
     print(f"Bin size: {bin_size}ms\n")
@@ -94,7 +94,8 @@ def run_single_test_analysis(base_path, bin_size=1, artifact_filter=False, all_d
         artifact_filter=artifact_filter,
         folderpath=base_path,
         plot_suffix=f"_{bin_size}_maxflow_{not all_data}",
-        throughput_method="strict"
+        throughput_method="strict",
+        dbcan_option=dbscan_option
     )
 
     threshold_interval_throughput_results = None
@@ -145,6 +146,7 @@ def run_single_test_analysis(base_path, bin_size=1, artifact_filter=False, all_d
 
     # Step 7: Write Stats Accumulator to JSON -------------------------
     stats_accumulator.save_all()
+    print("Total number of throughput points:", len(strict_interval_throughput_results) if strict_interval_throughput_results else None)
 
     # Return the results
     return {

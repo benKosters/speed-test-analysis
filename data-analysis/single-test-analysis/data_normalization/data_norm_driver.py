@@ -11,11 +11,10 @@ from . import (
     byte_count_validation
 )
 import utilities
-from statistics import StatisticsAccumulator
 
 
 def run_normalization_driver(base_path, stats_accumulator, socket_file=None):
-    print("Normalizing Data", "=" * 60)
+    print("Normalizing throughput data", "=" * 60)
 
     # Step 1: Normalize data
     byte_file = os.path.join(base_path, "byte_time_list.json")

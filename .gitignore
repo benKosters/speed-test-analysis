@@ -1,14 +1,17 @@
 .DS_Store
 .git/
 node_modules/
+
+#.env files
 ookla-capture-tool/test-execution/.env
 ookla-capture-tool/test-tool/.env
+
 # Keep the dataset directory as a stub, but no contents
 datasets/*
 !datasets/.gitkeep
 
-plot-images/*
-!/plot-images/.gitkeep
+visualizations/plot-images/*
+!/visualizations/plot-images/.gitkeep
 
 # Keep ookla test results stub
 ookla-capture-tool/test-execution/ookla-test-results/*

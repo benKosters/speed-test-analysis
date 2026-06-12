@@ -1,6 +1,6 @@
 ## Ookla Speed Test Analysis
 
-This repository holds all scripts that were created to assist with the analysis of Ookla's web-based `speedtest.net` Internet speed test platform. This README gives a summary of the purpose and organization of how files are organized. For sub-directories that are much larger, there are also README files there that go into deeper detail.
+This repository holds all scripts that were created to assist with the analysis of Ookla's web-based `speedtest.net` Internet speed test platform. This README gives a summary of the purpose and organization of thie repository. There are README files for larger sub-directories that give further details.
 
 ### General Information
 

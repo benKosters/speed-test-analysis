@@ -25,33 +25,23 @@ from sklearn.neighbors import NearestNeighbors
 import sys
 from kneed import KneeLocator
 
-import dimension_throughput_calc as tp_calc
+import compute_throughput as tp_calc
 
-def run_artifact_filter(config_accumulator, data, filter_type='throughput', artifact_filter=True, folderpath=None, plot_suffix="", throughput_method = ""):
+def run_artifact_filter(config_accumulator, data, filter_type='throughput', artifact_filter=True, dbcan_option = True, folderpath=None, plot_suffix="", throughput_method = ""):
     if filter_type == 'bytecount':
-        # Filter based on raw bytecount data (old method)
-        return run_dbscan_driver_bytecount(
-            folder=folderpath,
-            dbscan_option=artifact_filter,
-            byte_count=data,
-            config_accumulator=config_accumulator
-        )
+        # Perform artifact filtering based on bytecount data (before throughput calculation)
+        # this version used DBSCAN only, it does NOT have the 1G filter implemented
+        return run_bytecount_artifact_filter(folder=folderpath,dbscan_option=artifact_filter,byte_count=data,config_accumulator=config_accumulator)
 
     elif filter_type == 'throughput':
-        # Filter based on throughput - applies both DBSCAN and 1Gbps threshold filters
-        return run_throughput_artifact_filter(
-            config_accumulator=config_accumulator,
-            throughput_results=data,
-            artifact_filter=artifact_filter,
-            plot_suffix=plot_suffix,
-            folderpath=folderpath,
-            throughput_method=throughput_method
-        )
+        # Perform filtering based on throughput data (after throughput calculation) - this is the current approach
+        return run_throughput_artifact_filter(config_accumulator=config_accumulator,throughput_results=data,artifact_filter=artifact_filter,plot_suffix=plot_suffix,
+                folderpath=folderpath,throughput_method=throughput_method,dbcan_option=dbcan_option)
     else:
         print("Please specify which version of artifact filtering to use.")
 
 
-def run_throughput_artifact_filter(config_accumulator, throughput_results, artifact_filter=True, plot_suffix="", folderpath=None, throughput_method=""):
+def run_throughput_artifact_filter(config_accumulator, throughput_results, artifact_filter=True, plot_suffix="", folderpath=None, throughput_method="", dbcan_option=True):
     """
     On throughput data, computes mean throughput for DBSCAN only, 1Gbps threshold only,
     and both filters. Always returns results with BOTH filters applied (if artifact_filter=True).
@@ -145,9 +135,18 @@ def run_throughput_artifact_filter(config_accumulator, throughput_results, artif
     config_accumulator.add(f'{throughput_method}_percent_time_removed_by_filtering', float(percent_time_total))
 
     # Return filtered data with BOTH filters applied
-    filtered_df = df[~df["artifact"]]
-    result = filtered_df.to_dict('records')
-    # result = dbscan_only_data
+    # filtered_df = df[~df["artifact"]]
+    # result = filtered_df.to_dict('records')
+
+
+    if dbcan_option:
+        result = dbscan_only_data
+        print("only using cs results")
+
+    else:
+        filtered_df = df[~df["artifact"]]
+        result = filtered_df.to_dict('records')
+
 
     print(f"\nTotal Artifact Points: {num_total_artifacts} out of {num_total_points}")
     print(f"Points Remaining: {num_points_remaining}")
@@ -156,7 +155,7 @@ def run_throughput_artifact_filter(config_accumulator, throughput_results, artif
     return result
 
 
-def run_dbscan_driver_bytecount(folder: str, dbscan_option: bool, byte_count, config_accumulator):
+def run_bytecount_artifact_filter(folder: str, dbscan_option: bool, byte_count, config_accumulator):
     # If Artifact filtering is disabled, fill in 0 for metrics.
     # TODO: Update the logic here to this is cleaner/metrics are saved in one place
     if not dbscan_option:
