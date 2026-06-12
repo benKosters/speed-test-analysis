@@ -2,10 +2,6 @@
 
 This repository holds all scripts that were created to assist with the analysis of Ookla's web-based `speedtest.net` Internet speed test platform. This README gives a summary of the purpose and organization of how files are organized. For sub-directories that are much larger, there are also README files there that go into deeper detail.
 
-
-TODO: Include setup section (mention their are other readme files throughout the repo to help with setup)
-TODO: Update requirements.txt to remove any uncessary import statements
-
 ### General Information
 
 Throughout this experiment, there were two methods for capturing Netlog data: manually capturing netlog data through the browser, and using an automated tool to run tests via Puppetteer. For the automated tests, the structure of the data files is set so automation of the analysis can occur smoothly. Most tests used during this research were captured manually, but **if** manually captured tests are used, here are some practices to keep in mind when performing analysis:
@@ -66,7 +62,7 @@ There are two functions of this repo that require installing dependencies:
 
 > Data Processing and Analysis
 
-1) Run `pip3 install -r requirements.txt` to download all python dependancies. This can be run in a virtual environment too.
+1) Run `pip3 install -r requirements.txt` to download all python dependancies. Note that there are some requirements that are not necessary and they need to be removed.
 
 
 ### Repository Organization
