@@ -26,12 +26,6 @@ from .plotting_utilities import (
     save_figure
 )
 
-from .plot_heatmap_throughput import (
-    load_byte_count as load_byte_count_heatmap,
-    create_heatmap,
-    create_stacked_area_heatmap
-)
-
 from .plot_socket_throughput import (
     plot_throughput_separated_by_sockets
 )
@@ -39,6 +33,11 @@ from .plot_socket_throughput import (
 from .plot_bar_bytecount import (
     load_byte_count as load_byte_count_bar,
     create_bytecount_bar_chart
+)
+
+from .plot_bytecount_gaps import (
+    load_byte_count,
+    create_event_timeline
 )
 
 __all__ = [
@@ -52,9 +51,6 @@ __all__ = [
     'plot_aggregated_bytecount',
     'plot_rema_per_http_stream',
 
-    'plot_sorted_throughput',
-    'plot_throughput_histogram_with_jumps',
-
     'ensure_plot_dir',
     'save_figure',
 
@@ -67,7 +63,10 @@ __all__ = [
     'load_byte_count_bar',
     'create_bytecount_bar_chart',
     # For strict interval throughput
-    'plot_strict_throughput_scatter'
+    'plot_strict_throughput_scatter',
+
+    'load_byte_count',
+    'create_event_timeline'
 ]
 
 __version__ = '1.0.0'

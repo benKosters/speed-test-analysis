@@ -25,9 +25,13 @@ def run_plot_driver(plot_data):
     # plots.plot_throughput_and_http_streams(plot_data)
     # plots.plot_throughput_scatter_max_flows_only(plot_data)
     # plots.plot_throughput_max_flow_only(plot_data, plot_type='line')
-    # plots.plot_throughput_max_flow_only(plot_data, plot_type='scatter')
+    # plots.plot_throughput_scatter_max_flow_only(plot_data, plot_type='scatter')
     # plots.plot_throughput_rema_separated_by_flows(plot_data, scatter=True)
-    plots.plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, scatter=True, rema = False)
+    #plots.plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, scatter=True, rema = False)
+
+    plots.create_bytecount_bar_chart(plot_data['byte_count'], source_times=plot_data['source_times'])
+
+    #plots.create_event_timeline(plot_data['byte_count'], begin_time=plot_data['begin_time'])
 
 
     # Strict interval throughput plots

@@ -16,7 +16,10 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import argparse
 import os
-from . import plotting_utilities
+try:
+    from . import plotting_utilities
+except ImportError:
+    import plotting_utilities
 
 
 
@@ -106,9 +109,9 @@ def create_bytecount_bar_chart(byte_count, begin_time=None, title=None, save_pat
 
     if title:
         ax.set_title(title, fontsize=14, fontweight='bold')
-    else:
-        ax.set_title('Bytes Transferred per Time Interval (Color-coded by Flow Count)',
-                     fontsize=14, fontweight='bold')
+    # else:
+    #     ax.set_title('Bytes Transferred per Time Interval (Color-coded by Flow Count)',
+    #                  fontsize=14, fontweight='bold')
 
     # Create a custom legend for flow counts
     handles = []

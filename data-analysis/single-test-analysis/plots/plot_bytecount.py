@@ -4,7 +4,8 @@ import pandas as pd
 
 
 """
-Plots only the aggregated bytecounts across all HTTP streams. This gives a clean view of total system throughput.
+Plots only the bytecounts from each individual HTTP Stream, not joined together.
+These functions are used in single-test-analysis
 """
 def plot_aggregated_bytecount(plot_data, test_type=None, title=None, log_scale=False):
     """
