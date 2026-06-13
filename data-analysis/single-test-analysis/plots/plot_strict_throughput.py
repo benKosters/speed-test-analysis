@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-from dimension_throughput_calc import throughput_driver as tp_calc
+from compute_throughput import throughput_driver as tp_calc
 import plots.plotting_utilities as plotting_utilities
 
 def plot_strict_throughput_scatter(plot_data, start_time=0, end_time=None, title=None, line=False):

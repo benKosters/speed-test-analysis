@@ -380,7 +380,7 @@ Each socket gets one row, and all streams using that socket are shown on that ro
 """
 def plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, start_time=0, end_time=None, title=None, scatter=False, rema = False):
     # Extract parameters from plot_data
-    throughput_list_dict = plot_data["all_throughput_data"]['strict_throughput_by_flows']
+    throughput_list_dict = plot_data["all_throughput_data"]['threshold_throughput_by_flows']
     source_times = plot_data["source_times"]
     begin_time = plot_data["begin_time"]
     save = plot_data["save"]
@@ -451,28 +451,29 @@ def plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, start_time
                 segment_start -= 1
 
             segment = combined_df.iloc[segment_start:i]
-
-            # ax1.plot(
-            #     segment['time'],
-            #     segment['throughput_ema'],
-            #     color=flow_colors.get(flow_count_prev, 'gray'),
-            #     linewidth=1.5,
-            #     linestyle='--',
-            # )
+            if rema:
+                ax1.plot(
+                    segment['time'],
+                    segment['throughput_ema'],
+                    color=flow_colors.get(flow_count_prev, 'gray'),
+                    linewidth=1.5,
+                    linestyle='--',
+                )
 
     # Add labels, title, and legend
-    ax1.set_xlabel('Time (seconds)')
+    ax1.set_xlabel('Time (seconds)') #fontzise=20
     ax1.set_ylabel('Throughput (Mbps)')
+    ax1.tick_params(axis='both')
     # ax1.set_ylim(0, 5000)
     ax1.set_ylim(0, combined_df['throughput'].max() * 1.1)
 
     if title:
-        ax1.set_title(title)
+        ax1.set_title(title, fontsize=20)
     else:
         server = plot_data.get("server", "Unknown").capitalize()
         test_type = plot_data.get("test_type", "Test").capitalize()
         bin_size = plot_data.get("bin_size_ms", "N/A")
-        # ax1.set_title(f'REMA Throughput: {server}, {test_type} with {bin_size}ms Bin Size')
+        # ax1.set_title(f'REMA Throughput: {server}, {test_type} with {bin_size}ms Bin Size', fontsize=20)
 
     # Create a custom legend for flow counts
     handles = []
@@ -483,7 +484,7 @@ def plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, start_time
         labels.append(f'{flow_count} Flows')
 
     # Place the flow count legend in the upper right
-    ax1.legend(handles=handles, labels=labels, bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax1.legend(handles=handles, labels=labels, loc='upper left')# fontsize = 20
 
     # -------------------  Sockets Gantt Chart (Bottom Subplot) - Grouped by Socket -------------------
     # Group streams by socket ID
@@ -519,10 +520,11 @@ def plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, start_time
 
         y_offset += 1
 
-    ax2.set_xlabel('Time (seconds)')
-    ax2.set_ylabel('Socket ID')
+    ax2.set_xlabel('Time (seconds)') # fontsize = 20
+    ax2.set_ylabel('Socket ID') # fontsize = 20
+    ax2.tick_params(axis='x') # labelsize = 20
     ax2.set_yticks(range(len(sorted_sockets)))
-    ax2.set_yticklabels([f'Socket {s}' if s != 'no_socket' else 'No Socket' for s in sorted_sockets], fontsize=8)
+    ax2.set_yticklabels([f'Socket {s}' if s != 'no_socket' else 'No Socket' for s in sorted_sockets]) # fontsize = 20
     ax2.grid(True, axis='y', linestyle='--', alpha=0.3)
 
     # Create legend for sockets
@@ -538,9 +540,9 @@ def plot_throughput_rema_separated_by_flows_socket_grouped(plot_data, start_time
 
     plt.tight_layout()
     if save and base_path:
-        filename = "placeholder.png"
+        filename = "placeholder3.png"
         plotting_utilities.save_figure(fig, base_path, filename)
-    # plt.show()
+    plt.show()
     print("Plot created: plot_throughput_rema_separated_by_flows_socket_grouped")
 
 
