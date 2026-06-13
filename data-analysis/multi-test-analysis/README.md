@@ -149,8 +149,47 @@ The `aggregation-scripts/aggregate_speedtest_metrics.py` script is used to compu
 
 For example, if there are ten Michwave multi flow tests, it will compute the mean of all these values across all ten tests.
 
-# 3. Comparative Plots
+# 3. Comparative Statistics
 
-There are a number of plots used to compare data across tests:
+KS best fit values are currently generated using the script `generate_best_fit_values.py`.
 
-1) #TODO: describe plots in more detail
+# 4. Comparative Plots
+
+## Cumulative Density Function (CDF) Plot of Throughput Points
+
+![CDF Plot](../../visualizations/readme-examples/throughput_cdf_example.png)
+
+`python3 plot_throughput_cdf.py <target directory> [options]`
+
+Options:
+  -h, --help  show this help message and exit
+  --bin BIN   Bin size for aggregating data (default: 1ms)
+  --save      Save plot to plot_images directory
+
+This plot is used to generate a CDF of the throughput values. Currently, the different configurations (max flow vs all data and artifact filter) are hardcoded! This needs to be fixed. The bin size is the only configuration that is adjustable. This plot calls `main.py` in the `single-test-analyis/` directory.
+
+## Bulk vs Reported Throughput
+
+![Bulk vs Reported Throughput](../../visualizations/readme-examples/bulk_vs_reported_throughput_example.png)
+
+`python3 plot_bulk_vs_reported_throughput.py ../../../datasets/aggregated_core_data.csv`
+
+This plot shows the differences between the bulk throughput (sum of bytes/time) and the throughput value reported by Ookla.
+
+## Average Maxflow Throughput
+
+![Average Maxflow Throughput](../../visualizations/readme-examples/average_throughput_example.png)
+
+`python3 plot_average_throughput.py ../../../datasets/aggregated_core_data.csv`
+
+This plot shows the average maxflow throughput, for each server and test direction.
+
+## Percent of Bytes Lost Based on Bin Size
+
+![Bytes Lost Based on Bin Size](../../visualizations/readme-examples/bytes_lost_per_interval_all_server_example.png)
+
+`python3 plot_bytes_lost_per_interval.py ../../../datasets/byte_loss.csv`
+
+This plot shows the percent of bytes lost due to the bin size when we are only considering byte count events where all flows are contributing.
+**Note** this plot was designed when we used the bin size as the *minimum threshold*. This method is NOT used, so this code is a bit stale.
+
