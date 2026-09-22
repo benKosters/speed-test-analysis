@@ -5,7 +5,6 @@
  #### test-execution
 
 This sub-directory holds the files for performing many Ookla speed tests. There is another README that describes how to set up and run tests. It is designed to be highly configurable, running tests in a variety of orders.
-*Note: The Docker file does not work and needs to be corrected*
 
  #### netlog-filter
 

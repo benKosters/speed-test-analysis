@@ -69,6 +69,14 @@ def run_single_test_analysis(base_path, bin_size=1, artifact_filter=False, dbsca
     begin_time = normalization_data['begin_time']
     byte_count = normalization_data['byte_count']
 
+    # Save source_times to JSON file for use with plotting scripts
+    source_times_with_begin = source_times.copy()
+    source_times_with_begin['begin_time'] = begin_time
+    source_times_path = os.path.join(base_path, "source_times.json")
+    with open(source_times_path, 'w') as f:
+        json.dump(source_times_with_begin, f, indent=2)
+    print(f"Saved source_times to: {source_times_path}\n")
+
     # Step 2: Data Selection -----------------------------------------
     # TODO Data selection, collect these metrics
     data_selection_results = data_selection.run_data_selection_driver(byte_count, aggregated_time, stats_accumulator)
@@ -157,6 +165,7 @@ def run_single_test_analysis(base_path, bin_size=1, artifact_filter=False, dbsca
         'test_type': stats_accumulator.get('test_type'),
         'begin_time': begin_time,
         'end_time': end_time,
+        'source_times': source_times
     }
 
 
@@ -199,6 +208,14 @@ def run_all_configs_analysis(base_path, save_plots=False):
     source_times = normalization_data['source_times']
     begin_time = normalization_data['begin_time']
     byte_count = normalization_data['byte_count']
+
+    # Save source_times to JSON file for use with plotting scripts
+    source_times_with_begin = source_times.copy()
+    source_times_with_begin['begin_time'] = begin_time
+    source_times_path = os.path.join(base_path, "source_times.json")
+    with open(source_times_path, 'w') as f:
+        json.dump(source_times_with_begin, f, indent=2)
+    print(f"Saved source_times to: {source_times_path}\n")
 
     # Step 2: Data Selection -----------------------------------------
     # TODO Data selection, collect these metrics

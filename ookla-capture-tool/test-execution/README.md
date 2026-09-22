@@ -4,7 +4,7 @@ This tool runs Ookla speed tests using a headless browser and can collect networ
 
 ## Setup
 
-• Run `./tool-setup.sh` once to configure packet capture permissions
+• Ensure `setup.sh` has been run in the root of this directory
 
 • Create `.env` file with AWS credentials (for batch uploads):
   ```

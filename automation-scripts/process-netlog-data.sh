@@ -117,7 +117,7 @@ if [ -n "$FILTER_MODE" ]; then
     echo "Filter mode: $FILTER_MODE"
 fi
 
-NETLOG_FILTER_SCRIPT="../ookla/netlog-filter/main.js"
+NETLOG_FILTER_SCRIPT="../ookla-capture-tool/netlog-filter/main.js"
 
 if [ ! -f "$NETLOG_FILTER_SCRIPT" ]; then
     echo "Error: Netlog filter script not found at $NETLOG_FILTER_SCRIPT"

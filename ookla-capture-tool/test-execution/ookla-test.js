@@ -1,13 +1,19 @@
 /*
-This file should generate 2 files:
+This file should generate 2 outputs:
 1. netlog.json - contains the raw network data
 2. speedtest_result.json - contains the speedtest results and metadata in JSON format
+
+NOTE: speedtest.net no longer uses pure html/css. It uses Material UI.
+
 */
 
-const puppeteer = require('puppeteer');
-const { Command } = require('commander');
-const fs = require('fs');
-const path = require('path');
+import puppeteer from 'puppeteer';
+import { Command } from 'commander';
+import fs from 'fs';
+import path from 'path';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 const program = new Command();
 
@@ -29,7 +35,6 @@ function validate_output_directory(outputOption) {
     /**
      * Validate the output directory exists. The default option is./netlog_output
      */
-    const fs = require('fs');
     let output_dir;
 
     if (outputOption) {
@@ -49,64 +54,79 @@ const output_dir = validate_output_directory(program.opts().output);
 console.log('Using server:', server, "with a", num_flows, "flow test.");
 
 (async () => {
-    //const browser = await puppeteer.launch({ headless: false }); // Set to true to run headless
+    // const browser = await puppeteer.launch({ headless: false }); // Set to true to run headless
+    console.log("Using Puppeteer version:", require('puppeteer/package.json').version);
     const keyarg = "--ssl-key-log-file=" + output_dir + "/sslkeylog.log"; //Save SSL keys to decrypt HTTP traffic
     const netlogarg = "--log-net-log=" + output_dir + "/netlog.json";
-    const browser = await puppeteer.launch({ headless: 'new', args: [keyarg, netlogarg, '--no-sandbox'] }) //#FIXME add keyarg later to save SSL keys
+    const browser = await puppeteer.launch({ headless: false, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] })
+    // const browser = await puppeteer.launch({ headless: false, dumpio: true, args: [keyarg, netlogarg, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-features=NetworkService'] }) //#FIXME add keyarg later to save SSL keys
     // NOTE: For ARM architecture, the chrome browser executable path must be specified
     // Example: const browser = await puppeteer.launch({ executablePath: '/usr/bin/chromium-browser', headless: 'new', args: [keyarg, netlogarg, '--no-sandbox'] });
 
     const page = await browser.newPage();
 
     await page.setViewport({ width: 1280, height: 800 });
-    await page.goto('https://www.speedtest.net/', { waitUntil: 'networkidle2' });
+    await page.goto('https://www.speedtest.net/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // Wait a bit for dynamic content to load
+    console.log("page has loaded")
+    // await new Promise(resolve => setTimeout(resolve, 3000));
 
-    //First, change the server
     try {
-        // Hit the select server button
-        const selectServerSelector = 'div.pure-u-5-12:nth-child(3) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(4) > a:nth-child(1)';
-        await page.waitForSelector(selectServerSelector);
-        await page.click(selectServerSelector);
+        // First, change the server
+        await page.waitForFunction(() => {
+            return Array.from(document.querySelectorAll('button')).some(b => b.textContent.trim() === 'Change Server');
+        });
+        await page.evaluate(() => {
+            const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Change Server');
+            btn.click();
+        });
         console.log("Selection server button clicked.");
 
-        //wait for the search box, and type the server name
-        const searchBoxSelector = '#host-search';
-        await page.waitForSelector(searchBoxSelector);
-        await page.type(searchBoxSelector, server);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Select the search input for the server
+        const searchInputSelector = 'input[placeholder="Search"]';
+        await page.click(searchInputSelector);
+        await page.keyboard.type(server);
 
-        //Select the server that we want
-        const serverSelection = `.server-hosts-list > ul:nth-child(2) > li:nth-child(1) > a:nth-child(1)`;
-        await page.waitForSelector(serverSelection);
-        await page.click(serverSelection);
+        const serverResultSelector = 'ul.MuiList-root > div.MuiListItemButton-root[role="button"]:first-of-type';
+        console.log("server selector:", serverResultSelector);
+        await page.waitForFunction((expectedServer, selector) => {
+            const firstResult = document.querySelector(selector);
+            return firstResult && firstResult.textContent.toLowerCase().includes(expectedServer.toLowerCase());
+        }, {}, server, serverResultSelector);
+        console.log("about to click server button:", serverResultSelector);
+        await page.click(serverResultSelector);
+
         await new Promise(resolve => setTimeout(resolve, 2000));
     }
-    catch {
-        console.log("There is an error with the server selection process.");
+    catch (e) {
+        console.log("There is an error with the server selection process.", e);
         await browser.close();
-
+        return;
     }
-
-    //Second, confirm the connection type (single or multi flow)
+    console.log("selecting connection type")
     try {
-        if (num_flows === "Single" || num_flows === "single") {
-            const singleFlowSelector = 'a.test-mode:nth-child(4)';
-            await page.waitForSelector(singleFlowSelector);
-            await page.click(singleFlowSelector);
-            console.log("Single flow test selected.");
+        const modeName = num_flows.toLowerCase() === "single" ? "Single" : "Multi";
+        const modeSelector = `button[aria-label^="${modeName}"][aria-pressed]`;
+        await page.waitForSelector(modeSelector);
+
+        const modeIsSelected = await page.$eval(
+            modeSelector,
+            element => element.getAttribute('aria-pressed') === 'true'
+        );
+        if (!modeIsSelected) {
+            await page.click(modeSelector);
+            await page.waitForFunction((selector) => {
+                const button = document.querySelector(selector);
+                return button && button.getAttribute('aria-pressed') === 'true';
+            }, {}, modeSelector);
         }
-        else {
-            const multiFlowSelector = 'a.test-mode:nth-child(2)';
-            await page.waitForSelector(multiFlowSelector);
-            await page.click(multiFlowSelector);
-            console.log("Multi flow test selected.");
-        }
+        console.log(`${modeName} flow test selected.`);
     } catch (e) {
         console.log("Could not change the connection type. Default is a multi flow test.");
     }
 
     try {
-        const gobutton = '.start-text';
+        const gobutton = 'button[aria-label^="start speed test - connection type"]';
         await page.waitForSelector(gobutton);
         await page.click(gobutton);
         console.log("Beginning test.");
@@ -115,24 +135,30 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
     }
 
     try {
-        const pingLatencySelector = '#container > div.pre-fold.mobile-test-complete > div.main-content > div > div > div > div.pure-u-custom-speedtest > div.speedtest-view > div > div.main-view > div > div.result-area.result-area-test > div > div > div.result-container-speed.result-container-speed-active > div.result-item-details > div > span.result-item.result-item-latency.result-data-latency-item.updated > span'
-        await page.waitForSelector(pingLatencySelector, { timeout: 90000 });
+        const pingLatencySelector = 'svg[aria-label="Idle Latency"] + span';
+        const downloadLatencySelector = 'svg[aria-label="Download Latency"] + span';
+        const uploadLatencySelector = 'svg[aria-label="Upload Latency"] + span';
+        const downloadSpeedSelector = 'svg[aria-label="Receiving Time"] + div h3';
+        const uploadSpeedSelector = 'svg[aria-label="Sending Time"] + div h3';
+
+        await page.waitForFunction((selectors) => {
+            return selectors.every(selector => {
+                const element = document.querySelector(selector);
+                return element && Number.isFinite(Number.parseFloat(element.textContent.trim()));
+            });
+        }, { timeout: 180000 }, [
+            pingLatencySelector,
+            downloadLatencySelector,
+            uploadLatencySelector,
+            downloadSpeedSelector,
+            uploadSpeedSelector
+        ]);
+
+        console.log("Test metrics are complete; collecting results.");
         const latency = await page.$eval(pingLatencySelector, el => el.textContent);
-
-        const downloadLatencySelector = '#container > div.pre-fold.mobile-test-complete > div.main-content > div > div > div > div.pure-u-custom-speedtest > div.speedtest-view > div > div.main-view > div > div.result-area.result-area-test > div > div > div.result-container-speed.result-container-speed-active > div.result-item-details > div > span.result-item.result-item-latencydown.result-data-latency-item.updated > span';
-        await page.waitForSelector(downloadLatencySelector, { timeout: 90000 });
         const downloadLatency = await page.$eval(downloadLatencySelector, el => el.textContent);
-
-        const uploadLatencySelector = '#container > div.pre-fold.mobile-test-complete > div.main-content > div > div > div > div.pure-u-custom-speedtest > div.speedtest-view > div > div.main-view > div > div.result-area.result-area-test > div > div > div.result-container-speed.result-container-speed-active > div.result-item-details > div > span.result-item.result-item-latencyup.result-data-latency-item.updated > span';
-        await page.waitForSelector(uploadLatencySelector, { timeout: 90000 });
         const uploadLatency = await page.$eval(uploadLatencySelector, el => el.textContent);
-
-        const downloadSpeedSelector = '#container > div.pre-fold.mobile-test-complete > div.main-content > div > div > div > div.pure-u-custom-speedtest > div.speedtest-view > div > div.main-view > div > div.result-area.result-area-test > div > div > div.result-container-speed.result-container-speed-active > div.result-container-data > div.result-item-container.result-item-container-align-center > div > div.result-data.u-align-left > span';
-        await page.waitForSelector(downloadSpeedSelector, { timeout: 5000 });
         const downloadSpeed = await page.$eval(downloadSpeedSelector, el => el.textContent);
-
-        const uploadSpeedSelector = '#container > div.pre-fold.mobile-test-complete > div.main-content > div > div > div > div.pure-u-custom-speedtest > div.speedtest-view > div > div.main-view > div > div.result-area.result-area-test > div > div > div.result-container-speed.result-container-speed-active > div.result-container-data > div.result-item-container.result-item-container-align-left > div > div.result-data.u-align-left > span';
-        await page.waitForSelector(uploadSpeedSelector, { timeout: 5000 });
         const uploadSpeed = await page.$eval(uploadSpeedSelector, el => el.textContent);
 
         const time = new Date();

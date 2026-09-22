@@ -45,6 +45,7 @@ def run_throughput_calculation_driver(byte_count, aggregated_time, begin_time, b
     bytes = stats_accumulator.get("total_raw_bytes")
     timespan = stats_accumulator.get("list_duration_sec")
     bulk_throughput_mbps = (bytes * 8 / 1_000_000) / (timespan)
+    print("Bukl throughput (Mbps):", bulk_throughput_mbps)
     config_accumulator.add('bulk_throughput_mbps', float(bulk_throughput_mbps))
 
     # Add aggregated data point count (before binning)

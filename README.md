@@ -50,19 +50,45 @@ For an ookla test, the first step is making sure the raw netlog data is in a dir
 
 ## Setup
 
-There are two functions of this repo that require installing dependencies:
+This repository provides two setup options:
 
-> Automated Testing Tool
+### Option 1: Docker
 
-1) Run `npm install` to install all node dependencies
+Docker provides a self-contained environment with all dependencies pre-configured, making it ideal for running on different Linux devices (including Raspberry Pi).
 
-2) From the root of this directory, run `./ookla/test-tool/tool-setup.sh` (or just `./tool-setup.sh` if you are already in that directory) to install some extra packages like wireshark and someta to capture packets and CPU usage during tests
+1. Build the Docker image from the repository root:
+   ```bash
+   docker build -t speed-test-analysis .
+   ```
 
-**NOTE:** There are some architecture differences
+2. Run the container:
+   ```bash
+   docker run --rm -it speed-test-analysis
+   ```
 
-> Data Processing and Analysis
+No additional setup is required - the Docker image includes Node.js 18, Python 3, Chromium, and all necessary dependencies.
 
-1) Run `pip3 install -r requirements.txt` to download all python dependancies. Note that there are some requirements that are not necessary and they need to be removed.
+### Option 2: Local Setup (Linux-based systems)
+
+For local development without Docker:
+
+1. Run the interactive setup script to install system dependencies:
+   ```bash
+   ./setup.sh
+   ```
+   This installs Python 3, Node.js, and optional tools (Go, Wireshark, SoMeta).
+
+2. Install Node.js dependencies for the automated testing tool:
+   ```bash
+   npm install
+   ```
+
+3. Install Python dependencies for data analysis:
+   ```bash
+   pip3 install -r requirements.txt
+   ```
+
+**Note:** The setup.sh script only installs system-level dependencies. You must manually run npm install and pip install afterwards.
 
 
 ### Repository Organization

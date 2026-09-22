@@ -6,6 +6,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Create results directory in the test-execution folder - this file should always exist, but the it is required for the output files
 if [ ! -d "$SCRIPT_DIR/ookla-test-results" ]; then
     mkdir "$SCRIPT_DIR/ookla-test-results"
+    # If running as root, change ownership to the actual user
+    if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        chown "$SUDO_USER:$SUDO_USER" "$SCRIPT_DIR/ookla-test-results"
+    fi
 fi
 
 # Default parameters
@@ -85,6 +89,10 @@ if [ -z "$OUTPUT_DIR" ]; then
         # For dev mode, use/create the dev_tests directory
         if [ ! -d "$SCRIPT_DIR/ookla-test-results/dev_tests" ]; then
             mkdir -p "$SCRIPT_DIR/ookla-test-results/dev_tests"
+            # If running as root, change ownership to the actual user
+            if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+                chown -R "$SUDO_USER:$SUDO_USER" "$SCRIPT_DIR/ookla-test-results/dev_tests"
+            fi
         else
             echo "Clearing old files in dev_tests directory."
             rm -rf "$SCRIPT_DIR/ookla-test-results/dev_tests/*" # Remove old files
@@ -96,6 +104,11 @@ if [ -z "$OUTPUT_DIR" ]; then
         SERVER_FORMATTED=$(echo "$SERVER" | tr '[:upper:]' '[:lower:]' | tr ' ' '_')
         OUTPUT_DIR="$SCRIPT_DIR/ookla-test-results/${SERVER_FORMATTED}-${CONNECTION}-${TIMESTAMP}"
         mkdir -p "$OUTPUT_DIR"
+
+        # If running as root, change ownership to the actual user
+        if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+            chown -R "$SUDO_USER:$SUDO_USER" "$OUTPUT_DIR"
+        fi
     fi
 else
     # If output directory is specified, create a subdirectory with the same formatting
@@ -103,6 +116,11 @@ else
     SERVER_FORMATTED=$(echo "$SERVER" | tr '[:upper:]' '[:lower:]' | tr ' ' '_')
     OUTPUT_DIR="$OUTPUT_DIR/${SERVER_FORMATTED}-${CONNECTION}-${TIMESTAMP}"
     mkdir -p "$OUTPUT_DIR"
+
+    # If running as root, change ownership to the actual user
+    if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        chown -R "$SUDO_USER:$SUDO_USER" "$OUTPUT_DIR"
+    fi
 fi
 
 # Display configuration
@@ -127,28 +145,24 @@ if [ "$PCAP_FLAG" = true ]; then
     mkdir -p "$OUTPUT_DIR"
     chmod -R 777 "$OUTPUT_DIR"
 
+    # If running as root, change ownership to the actual user to avoid permission issues
+    if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        chown -R "$SUDO_USER:$SUDO_USER" "$OUTPUT_DIR"
+    fi
+
     touch "$PCAP_FILE"
     chmod 666 "$PCAP_FILE"
 
+    # Set ownership of pcap file as well
+    if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        chown "$SUDO_USER:$SUDO_USER" "$PCAP_FILE"
+    fi
+
     echo "Running pcap on $INTERFACE."
 
-    if [ "$(id -u)" -eq 0 ]; then
-        # Assume that the user is running as root
-        dumpcap -i $INTERFACE -w "$PCAP_FILE" > "$OUTPUT_DIR/capture_output.log" 2>&1 &
-        TSHARK_PID=$!
-        echo "Running dumpcap as root"
-    else
-        # Try running with sudo
-        sudo -n true 2>/dev/null
-        if [ $? -eq 0 ]; then
-            # Use dumpcap via the wireshart group permissions
-            dumpcap -i $INTERFACE -w "$PCAP_FILE" > "$OUTPUT_DIR/capture_output.log" 2>&1 &
-            TSHARK_PID=$!
-            echo "Running dumpcap via wireshark group permissions"
-        else
-            echo "Cannot start dumpcap: requires elevated permissions"
-        fi
-    fi
+    # Run dumpcap using wireshark group permissions
+    dumpcap -i $INTERFACE -w "$PCAP_FILE" > "$OUTPUT_DIR/capture_output.log" 2>&1 &
+    TSHARK_PID=$!
 
     # Check if dumpcap started successfully
     sleep 2

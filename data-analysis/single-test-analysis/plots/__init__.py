@@ -16,11 +16,6 @@ from .plot_strict_throughput import (
     plot_strict_throughput_scatter
 )
 
-from .plot_sorted_throughput import (
-    plot_sorted_throughput,
-    plot_throughput_histogram_with_jumps
-)
-
 from .plotting_utilities import (
     ensure_plot_dir,
     save_figure
@@ -33,11 +28,6 @@ from .plot_socket_throughput import (
 from .plot_bar_bytecount import (
     load_byte_count as load_byte_count_bar,
     create_bytecount_bar_chart
-)
-
-from .plot_bytecount_gaps import (
-    load_byte_count,
-    create_event_timeline
 )
 
 __all__ = [
