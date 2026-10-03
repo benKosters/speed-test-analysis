@@ -1,0 +1,22 @@
+{
+    "servers": [
+        "merit",
+        "spacelink",
+        "csl",
+        "deutsche",
+        "ashburn"
+    ],
+    "connections": [
+        "single",
+        "multi"
+    ],
+    "order": "alternate",
+    "packet_capture": true,
+    "interface": "eth0",
+    "cpu_monitor": true,
+    "batch_size": 20,
+    "wait_between_batches_seconds": 30,
+    "upload_to_s3": false,
+    "process_netlog_before_upload": false,
+    "batch_name": "calvin-october-set"
+}

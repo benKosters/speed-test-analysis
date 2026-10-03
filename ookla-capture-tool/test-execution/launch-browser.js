@@ -25,10 +25,18 @@ program
 
 program.parse(process.argv);
 
-const server = program.opts().server || "Michwave"; //Default to Michwave if no server provided
+const server = program.opts().server || "Merit"; //Default to Michwave if no server provided
 const num_flows = program.opts().connection || "multi"; //Default to multi if no connection type provided
 const location = program.opts().location || ""; //Default to empty if no location provided
 
+
+function log(...args) {
+    // console.log with multiple arguments, prefixed by a local [YYYY/MM/DD HH:MM:SS] timestamp
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const timestamp = `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    console.log(`[${timestamp}]`, ...args);
+}
 
 
 function validate_output_directory(outputOption) {
@@ -46,19 +54,19 @@ function validate_output_directory(outputOption) {
         }
         output_dir = defaultDir;
     }
-    console.log('Output directory:', output_dir);
+    log('Output directory:', output_dir);
     return output_dir;
 }
 
 const output_dir = validate_output_directory(program.opts().output);
-console.log('Using server:', server, "with a", num_flows, "flow test.");
+log('Using server:', server, "with a", num_flows, "flow test.");
 
 (async () => {
     // const browser = await puppeteer.launch({ headless: false }); // Set to true to run headless
-    console.log("Using Puppeteer version:", require('puppeteer/package.json').version);
+    log("Using Puppeteer version:", require('puppeteer/package.json').version);
     const keyarg = "--ssl-key-log-file=" + output_dir + "/sslkeylog.log"; //Save SSL keys to decrypt HTTP traffic
     const netlogarg = "--log-net-log=" + output_dir + "/netlog.json";
-    const browser = await puppeteer.launch({ headless: false, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] })
+    const browser = await puppeteer.launch({ headless: 'new', args: [keyarg, netlogarg, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] })
     // const browser = await puppeteer.launch({ headless: false, dumpio: true, args: [keyarg, netlogarg, '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-features=NetworkService'] }) //#FIXME add keyarg later to save SSL keys
     // NOTE: For ARM architecture, the chrome browser executable path must be specified
     // Example: const browser = await puppeteer.launch({ executablePath: '/usr/bin/chromium-browser', headless: 'new', args: [keyarg, netlogarg, '--no-sandbox'] });
@@ -68,7 +76,7 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
     await page.setViewport({ width: 1280, height: 800 });
     await page.goto('https://www.speedtest.net/', { waitUntil: 'domcontentloaded', timeout: 60000 });
     // Wait a bit for dynamic content to load
-    console.log("page has loaded")
+    log("page has loaded")
     // await new Promise(resolve => setTimeout(resolve, 3000));
 
     try {
@@ -80,7 +88,7 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
             const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Change Server');
             btn.click();
         });
-        console.log("Selection server button clicked.");
+        log("Selection server button clicked.");
 
         // Select the search input for the server
         const searchInputSelector = 'input[placeholder="Search"]';
@@ -88,22 +96,22 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
         await page.keyboard.type(server);
 
         const serverResultSelector = 'ul.MuiList-root > div.MuiListItemButton-root[role="button"]:first-of-type';
-        console.log("server selector:", serverResultSelector);
+        log("server selector:", serverResultSelector);
         await page.waitForFunction((expectedServer, selector) => {
             const firstResult = document.querySelector(selector);
             return firstResult && firstResult.textContent.toLowerCase().includes(expectedServer.toLowerCase());
         }, {}, server, serverResultSelector);
-        console.log("about to click server button:", serverResultSelector);
+        log("about to click server button:", serverResultSelector);
         await page.click(serverResultSelector);
 
         await new Promise(resolve => setTimeout(resolve, 2000));
     }
     catch (e) {
-        console.log("There is an error with the server selection process.", e);
+        log("There is an error with the server selection process.", e);
         await browser.close();
         return;
     }
-    console.log("selecting connection type")
+    log("selecting connection type")
     try {
         const modeName = num_flows.toLowerCase() === "single" ? "Single" : "Multi";
         const modeSelector = `button[aria-label^="${modeName}"][aria-pressed]`;
@@ -120,18 +128,18 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
                 return button && button.getAttribute('aria-pressed') === 'true';
             }, {}, modeSelector);
         }
-        console.log(`${modeName} flow test selected.`);
+        log(`${modeName} flow test selected.`);
     } catch (e) {
-        console.log("Could not change the connection type. Default is a multi flow test.");
+        log("Could not change the connection type. Default is a multi flow test.");
     }
 
     try {
         const gobutton = 'button[aria-label^="start speed test - connection type"]';
         await page.waitForSelector(gobutton);
         await page.click(gobutton);
-        console.log("Beginning test.");
+        log("Beginning test.");
     } catch (e) {
-        console.log("There is an error with selecting the start button.");
+        log("There is an error with selecting the start button.");
     }
 
     try {
@@ -154,7 +162,7 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
             uploadSpeedSelector
         ]);
 
-        console.log("Test metrics are complete; collecting results.");
+        log("Test metrics are complete; collecting results.");
         const latency = await page.$eval(pingLatencySelector, el => el.textContent);
         const downloadLatency = await page.$eval(downloadLatencySelector, el => el.textContent);
         const uploadLatency = await page.$eval(uploadLatencySelector, el => el.textContent);
@@ -181,14 +189,14 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
         const resultsPath = path.join(output_dir, 'speedtest_result.json');
         fs.writeFileSync(resultsPath, JSON.stringify(testResults, null, 2));
 
-        console.log("\nPing Latency:", latency);
-        console.log("Download Latency:", downloadLatency);
-        console.log("Upload Latency:", uploadLatency);
-        console.log("\nDownload Speed:", downloadSpeed, "Mbps");
-        console.log("Upload Speed:", uploadSpeed, "Mbps\n");
+        log("\nPing Latency:", latency);
+        log("Download Latency:", downloadLatency);
+        log("Upload Latency:", uploadLatency);
+        log("\nDownload Speed:", downloadSpeed, "Mbps");
+        log("Upload Speed:", uploadSpeed, "Mbps\n");
     }
     catch (e) {
-        console.log("There was in issue with the test finishing")
+        log("There was in issue with the test finishing")
     }
 
     // Third, close the popup and take a screenshot of the results
@@ -196,21 +204,21 @@ console.log('Using server:', server, "with a", num_flows, "flow test.");
         const popupSelector = "#container > div.pre-fold.mobile-test-complete > div.main-content > div > div > div > div.pure-u-custom-speedtest > div.speedtest-view > div > div.main-view > div > div.desktop-app-prompt-modal > div > a > svg";
         await page.waitForSelector(popupSelector, { timeout: 3000 });
         await page.click(popupSelector);
-        console.log("Popup closed.");
+        log("Popup closed.");
     }
     catch {
-        console.log("Popup did not appear.");
+        log("Popup did not appear.");
     }
 
     await page.screenshot({ path: output_dir + '/speedtest_result.png' });
-    console.log("Test is complete!");
+    log("Test is complete!");
 
-    console.log("Closing browser to finalize netlog capture");
+    log("Closing browser to finalize netlog capture");
     // Close the pages before closing the browser to make browser closure faster
     const pages = await browser.pages();
     for (const page of pages) {
         await page.close();
     }
     await browser.close();
-    console.log("Browser closed. Netlog capture should now be finalized.");
+    log("Browser closed. Netlog capture should now be finalized.");
 })();

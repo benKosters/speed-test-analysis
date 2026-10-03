@@ -181,8 +181,8 @@ if [ "$PCAP_FLAG" = true ]; then
     fi
 fi
 # After pcap setup, begin the Ookla test
-# Set up command to run the ookla-test.js - need to pass command line arguments into the node script
-JS_COMMAND="node $SCRIPT_DIR/ookla-test.js"
+# Set up command to run the launch-browser.js - need to pass command line arguments into the node script
+JS_COMMAND="node $SCRIPT_DIR/launch-browser.js"
 JS_COMMAND="$JS_COMMAND -s \"$SERVER\""
 JS_COMMAND="$JS_COMMAND -c \"$CONNECTION\""
 JS_COMMAND="$JS_COMMAND -o \"$OUTPUT_DIR\""
